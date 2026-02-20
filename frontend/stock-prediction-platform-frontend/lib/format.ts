@@ -1,8 +1,40 @@
-export function formatCurrency(value: number, symbol = "$"): string {
-  return `${symbol}${value.toLocaleString("en-US", {
+import { useStore } from "./store"
+
+/**
+ * Get the current currency conversion context from the store.
+ * Returns { symbol, rate } where rate converts USD -> selected currency.
+ */
+function getCurrencyCtx(): { symbol: string; rate: number } {
+  const state = useStore.getState()
+  return { symbol: state.currencySymbol, rate: state.exchangeRate }
+}
+
+/**
+ * Format a USD value into the user's selected currency.
+ * If `converted` is true (default), the value is multiplied by the exchange rate.
+ * Pass `converted: false` if the value is already in the target currency.
+ */
+export function formatCurrency(
+  value: number,
+  opts?: { symbol?: string; rate?: number; converted?: boolean }
+): string {
+  const ctx = getCurrencyCtx()
+  const symbol = opts?.symbol ?? ctx.symbol
+  const rate = opts?.rate ?? ctx.rate
+  const shouldConvert = opts?.converted !== false
+  const converted = shouldConvert ? value * rate : value
+  return `${symbol}${converted.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
+}
+
+/**
+ * Convert a USD value to the selected currency (number only, no formatting).
+ */
+export function convertValue(usdValue: number): number {
+  const { rate } = getCurrencyCtx()
+  return usdValue * rate
 }
 
 export function formatPercent(value: number): string {

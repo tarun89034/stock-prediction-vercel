@@ -15,7 +15,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ChevronDown, Info, BarChart3 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { formatCurrency, formatPercent, formatNumber } from "@/lib/format"
+import { formatCurrency, formatPercent, formatNumber, convertValue } from "@/lib/format"
+import { useStore } from "@/lib/store"
 import type { BacktestResult } from "@/lib/types"
 
 interface ResultsPanelProps {
@@ -91,6 +92,9 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
   const [tradesOpen, setTradesOpen] = useState(false)
   const [tradesPage, setTradesPage] = useState(0)
   const tradesPerPage = 20
+  // Subscribe to currency changes to trigger re-render
+  useStore((s) => s.exchangeRate)
+  useStore((s) => s.currencySymbol)
 
   if (!result) {
     return (
@@ -227,7 +231,7 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#1c1c1f" />
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#52525b" }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: "#52525b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+            <YAxis tick={{ fontSize: 10, fill: "#52525b" }} tickLine={false} axisLine={false} tickFormatter={(v) => { const s = useStore.getState(); return `${s.currencySymbol}${((v * s.exchangeRate) / 1000).toFixed(0)}k` }} />
             <RechartsTooltip content={<CustomTooltip />} />
             <ReferenceLine y={result.initial_capital} stroke="#52525b" strokeDasharray="5 5" label={{ value: `Start: ${formatCurrency(result.initial_capital)}`, fill: "#52525b", fontSize: 10 }} />
             <Area type="monotone" dataKey="equity" stroke={equityColor} strokeWidth={2} fill="url(#equityGrad)" />
@@ -272,7 +276,7 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
                   <th className="px-3 py-2 font-medium">Direction</th>
                   <th className="px-3 py-2 font-medium text-right">Entry</th>
                   <th className="px-3 py-2 font-medium text-right">Exit</th>
-                  <th className="px-3 py-2 font-medium text-right">P&L ($)</th>
+                  <th className="px-3 py-2 font-medium text-right">P&L</th>
                   <th className="px-3 py-2 font-medium text-right">P&L (%)</th>
                   <th className="px-3 py-2 font-medium text-right">Days</th>
                 </tr>
@@ -284,8 +288,8 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
                     <td className="px-3 py-2 text-xs">{trade.entry_date}</td>
                     <td className="px-3 py-2 text-xs">{trade.exit_date}</td>
                     <td className="px-3 py-2 text-xs">{trade.direction}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">${trade.entry_price.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">${trade.exit_price.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">{formatCurrency(trade.entry_price)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">{formatCurrency(trade.exit_price)}</td>
                     <td className={cn("px-3 py-2 text-right font-mono text-xs tabular-nums", trade.pnl >= 0 ? "text-profit" : "text-loss")}>
                       {trade.pnl >= 0 ? "+" : ""}{formatCurrency(trade.pnl)}
                     </td>

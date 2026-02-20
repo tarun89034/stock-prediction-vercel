@@ -14,6 +14,7 @@ import {
 import { ArrowUp, ArrowDown, Minus, AlertTriangle, Brain } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatCurrency } from "@/lib/format"
+import { useStore } from "@/lib/store"
 import type { PredictionResult } from "@/lib/types"
 
 interface PredictResultsProps {
@@ -55,6 +56,10 @@ function ShapTooltip({ active, payload }: { active?: boolean; payload?: Array<{ 
 }
 
 export function PredictResults({ result }: PredictResultsProps) {
+  // Subscribe to currency store so component re-renders when currency changes
+  const _exchangeRate = useStore((s) => s.exchangeRate)
+  const _currencySymbol = useStore((s) => s.currencySymbol)
+
   if (!result) {
     return (
       <div className="flex h-[600px] flex-col items-center justify-center rounded-lg border border-dashed border-border">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { marketIndices as defaultIndices } from "@/lib/mock-data"
 import { api } from "@/lib/api"
 import { formatCurrency, formatPercent } from "@/lib/format"
+import { useStore } from "@/lib/store"
 import { Sparkline } from "@/components/sparkline"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
@@ -38,6 +39,9 @@ export function MarketOverview() {
   const [indices, setIndices] = useState<MarketCard[]>(defaultIndices)
   const [loading, setLoading] = useState(true)
   const [apiAvailable, setApiAvailable] = useState(false)
+  // Subscribe to currency changes to trigger re-render (formatCurrency reads from store)
+  useStore((s) => s.exchangeRate)
+  useStore((s) => s.currencySymbol)
 
   useEffect(() => {
     let cancelled = false
@@ -132,9 +136,7 @@ export function MarketOverview() {
                 </span>
               </div>
               <p className="mt-2 font-mono text-xl font-bold tabular-nums text-card-foreground">
-                {index.value.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                })}
+                {formatCurrency(index.value)}
               </p>
               <p
                 className={cn(
@@ -143,7 +145,7 @@ export function MarketOverview() {
                 )}
               >
                 {positive ? "+" : ""}
-                {index.change.toFixed(2)}
+                {formatCurrency(index.change)}
               </p>
               <div className="mt-3">
                 <Sparkline data={index.sparkline} positive={positive} height={32} />
