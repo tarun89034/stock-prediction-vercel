@@ -1,9 +1,25 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Search } from "lucide-react"
+import { Search, Loader2 } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import type { CurrencyCode } from "@/lib/types"
+
+const CURRENCY_OPTIONS: { code: CurrencyCode; label: string }[] = [
+  { code: "USD", label: "$ USD" },
+  { code: "INR", label: "\u20b9 INR" },
+  { code: "EUR", label: "\u20ac EUR" },
+  { code: "GBP", label: "\u00a3 GBP" },
+  { code: "JPY", label: "\u00a5 JPY" },
+  { code: "CAD", label: "C$ CAD" },
+  { code: "AUD", label: "A$ AUD" },
+  { code: "CHF", label: "CHF" },
+  { code: "CNY", label: "\u00a5 CNY" },
+  { code: "SGD", label: "S$ SGD" },
+  { code: "KRW", label: "\u20a9 KRW" },
+  { code: "BRL", label: "R$ BRL" },
+]
 
 export function AppHeader() {
   const [time, setTime] = useState<string>("")
@@ -11,6 +27,9 @@ export function AppHeader() {
   const collapsed = useStore((s) => s.sidebarCollapsed)
   const currentTicker = useStore((s) => s.currentTicker)
   const setCurrentTicker = useStore((s) => s.setCurrentTicker)
+  const selectedCurrency = useStore((s) => s.selectedCurrency)
+  const currencyLoading = useStore((s) => s.currencyLoading)
+  const setSelectedCurrency = useStore((s) => s.setSelectedCurrency)
   const [searchFocused, setSearchFocused] = useState(false)
   const [searchValue, setSearchValue] = useState("")
 
@@ -101,9 +120,35 @@ export function AppHeader() {
         </kbd>
       </form>
 
-      {/* Time */}
-      <div className="flex items-center gap-3 text-right">
-        <div>
+      {/* Currency + Time */}
+      <div className="flex items-center gap-4">
+        {/* Currency Selector */}
+        <div className="relative flex items-center gap-1.5">
+          {currencyLoading && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+          <select
+            value={selectedCurrency}
+            onChange={(e) => setSelectedCurrency(e.target.value as CurrencyCode)}
+            className="appearance-none rounded-md border border-border bg-secondary px-2.5 py-1.5 pr-6 font-mono text-xs font-medium text-foreground transition-colors hover:border-ring focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+          >
+            {CURRENCY_OPTIONS.map((opt) => (
+              <option key={opt.code} value={opt.code}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <svg
+            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+
+        {/* Time */}
+        <div className="text-right">
           <p className="font-mono text-sm font-semibold tabular-nums text-foreground">
             {time}
           </p>

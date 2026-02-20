@@ -3,17 +3,42 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { useStore } from "@/lib/store"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Check, X, Loader2, Wifi } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { Strategy } from "@/lib/types"
+import type { Strategy, CurrencyCode } from "@/lib/types"
+
+const CURRENCY_OPTIONS: { code: CurrencyCode; label: string }[] = [
+  { code: "USD", label: "$ USD — US Dollar" },
+  { code: "INR", label: "\u20b9 INR — Indian Rupee" },
+  { code: "EUR", label: "\u20ac EUR — Euro" },
+  { code: "GBP", label: "\u00a3 GBP — British Pound" },
+  { code: "JPY", label: "\u00a5 JPY — Japanese Yen" },
+  { code: "CAD", label: "C$ CAD — Canadian Dollar" },
+  { code: "AUD", label: "A$ AUD — Australian Dollar" },
+  { code: "CHF", label: "CHF — Swiss Franc" },
+  { code: "CNY", label: "\u00a5 CNY — Chinese Yuan" },
+  { code: "SGD", label: "S$ SGD — Singapore Dollar" },
+  { code: "HKD", label: "HK$ HKD — Hong Kong Dollar" },
+  { code: "KRW", label: "\u20a9 KRW — South Korean Won" },
+  { code: "BRL", label: "R$ BRL — Brazilian Real" },
+  { code: "MXN", label: "$ MXN — Mexican Peso" },
+  { code: "ZAR", label: "R ZAR — South African Rand" },
+  { code: "SEK", label: "kr SEK — Swedish Krona" },
+  { code: "NZD", label: "NZ$ NZD — New Zealand Dollar" },
+]
 
 export default function SettingsPage() {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
+  const selectedCurrency = useStore((s) => s.selectedCurrency)
+  const setSelectedCurrency = useStore((s) => s.setSelectedCurrency)
+  const exchangeRate = useStore((s) => s.exchangeRate)
+  const currencySymbol = useStore((s) => s.currencySymbol)
 
   const [apiUrl, setApiUrl] = useState(settings.apiUrl)
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
@@ -27,18 +52,21 @@ export default function SettingsPage() {
   const [showAdvanced, setShowAdvanced] = useState(settings.showAdvancedMetrics)
   const [chartAnim, setChartAnim] = useState(settings.chartAnimations)
   const [dateFormat, setDateFormat] = useState(settings.dateFormat)
-  const [currency, setCurrency] = useState(settings.currencySymbol)
 
   const testConnection = async () => {
     setConnectionStatus("testing")
     const start = Date.now()
     try {
-      // Simulated test
-      await new Promise((r) => setTimeout(r, 500))
+      const url = apiUrl.replace(/\/+$/, "")
+      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) })
+      if (!res.ok) throw new Error("Bad response")
+      const data = await res.json()
+      if (data.status !== "healthy") throw new Error("Unhealthy")
       setResponseTime(Date.now() - start)
       setConnectionStatus("success")
       toast.success("Connection successful")
     } catch {
+      setResponseTime(null)
       setConnectionStatus("error")
       toast.error("Connection failed")
     }
@@ -55,9 +83,17 @@ export default function SettingsPage() {
       showAdvancedMetrics: showAdvanced,
       chartAnimations: chartAnim,
       dateFormat,
-      currencySymbol: currency,
     })
+    // Also persist the API URL to localStorage for the API client
+    if (typeof window !== "undefined") {
+      localStorage.setItem("quantedge_api_url", apiUrl)
+    }
     toast.success("Settings saved")
+  }
+
+  const handleCurrencyChange = (code: string) => {
+    setSelectedCurrency(code as CurrencyCode)
+    toast.success(`Currency changed to ${code}`)
   }
 
   return (
@@ -106,6 +142,43 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* Currency Configuration */}
+      <section className="rounded-lg border border-border bg-card p-6">
+        <h2 className="mb-4 text-sm font-medium text-card-foreground">Currency</h2>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-xs text-muted-foreground">
+              Display Currency
+            </label>
+            <p className="mb-3 text-xs text-muted-foreground">
+              All stock prices (originally in USD) will be converted to your selected currency in real time.
+            </p>
+            <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCY_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.code} value={opt.code}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedCurrency !== "USD" && (
+            <div className="rounded-md bg-secondary/50 p-3">
+              <p className="text-xs text-muted-foreground">
+                Current rate: <span className="font-mono font-medium text-foreground">1 USD = {currencySymbol}{exchangeRate.toFixed(4)} {selectedCurrency}</span>
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Rates from open.er-api.com (updated daily). Cached for 1 hour.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Default Parameters */}
       <section className="rounded-lg border border-border bg-card p-6">
         <h2 className="mb-4 text-sm font-medium text-card-foreground">Default Parameters</h2>
@@ -125,7 +198,7 @@ export default function SettingsPage() {
             <Slider min={0} max={2} step={0.05} value={[commission]} onValueChange={([v]) => setCommission(v)} />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs text-muted-foreground">Default Initial Capital ($)</label>
+            <label className="mb-1.5 block text-xs text-muted-foreground">Default Initial Capital (USD)</label>
             <input
               type="number"
               value={capital}
@@ -187,17 +260,6 @@ export default function SettingsPage() {
                 <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
                 <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
                 <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs text-muted-foreground">Currency Symbol</label>
-            <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="$">$ (USD)</SelectItem>
-                <SelectItem value="EUR">EUR</SelectItem>
-                <SelectItem value="GBP">GBP</SelectItem>
               </SelectContent>
             </Select>
           </div>

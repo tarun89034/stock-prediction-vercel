@@ -108,3 +108,39 @@ export interface RecentActivity {
 }
 
 export type Strategy = "sma_crossover" | "rsi" | "macd"
+
+// ─── Currency Types ───
+
+export interface CurrencyInfo {
+  symbol: string
+  name: string
+}
+
+export type CurrencyCode =
+  | "USD" | "INR" | "EUR" | "GBP" | "JPY"
+  | "CAD" | "AUD" | "CHF" | "CNY" | "SGD"
+  | "HKD" | "KRW" | "BRL" | "MXN" | "ZAR"
+  | "SEK" | "NZD"
+
+export interface ExchangeRateResponse {
+  from: string
+  to: string
+  rate: number
+  from_symbol: string
+  to_symbol: string
+}
+
+export interface ExchangeRatesResponse {
+  base: string
+  rates: Record<string, number>
+  currencies: Record<string, CurrencyInfo>
+}
+
+export interface ConvertResponse {
+  from_currency: string
+  to_currency: string
+  rate: number
+  original_amount: number
+  converted_amount: number
+  symbol: string
+}

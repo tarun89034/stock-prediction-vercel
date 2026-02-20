@@ -12,3 +12,4 @@ pandas==2.2.3
 numpy==1.26.4
 quantstats==0.0.62
 finnhub-python
+httpx==0.28.1

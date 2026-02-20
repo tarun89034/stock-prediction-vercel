@@ -5,6 +5,10 @@ import type {
   PredictionResult,
   ParameterSweepRequest,
   ParameterSweepResult,
+  CurrencyInfo,
+  ExchangeRateResponse,
+  ExchangeRatesResponse,
+  ConvertResponse,
 } from "./types"
 
 const DEFAULT_BASE_URL = "http://localhost:8000"
@@ -111,6 +115,30 @@ export const api = {
 
   async getMetricsHealth(): Promise<{ available_metrics: string[] }> {
     const res = await fetchWithRetry(`${getBaseUrl()}/api/metrics/health`)
+    return res.json()
+  },
+
+  // ─── Currency Endpoints ───
+
+  async getSupportedCurrencies(): Promise<Record<string, CurrencyInfo>> {
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/currencies`)
+    return res.json()
+  },
+
+  async getExchangeRate(from: string, to: string): Promise<ExchangeRateResponse> {
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/exchange-rate/${from}/${to}`)
+    return res.json()
+  },
+
+  async getAllExchangeRates(base = "USD"): Promise<ExchangeRatesResponse> {
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/exchange-rates?base=${base}`)
+    return res.json()
+  },
+
+  async convertAmount(amount: number, from: string, to: string): Promise<ConvertResponse> {
+    const res = await fetchWithRetry(
+      `${getBaseUrl()}/api/data/convert?amount=${amount}&from=${from}&to=${to}`
+    )
     return res.json()
   },
 }
