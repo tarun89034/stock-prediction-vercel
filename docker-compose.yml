@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker.dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./stock_platform.db
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker.dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE=http://backend:8000/api
+    depends_on:
+      - backend
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
