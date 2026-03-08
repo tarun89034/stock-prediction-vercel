@@ -1,3 +1,13 @@
+---
+title: QuantEdge Stock Prediction Platform
+emoji: 📈
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 📈 Stock Prediction & Backtesting Platform
 
 A production-ready quantitative finance platform that combines **strategy backtesting**, **ML-based price direction prediction**, and **explainable AI** — built entirely with free tools and APIs.

@@ -1,20 +1,25 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request
 from app.models.schemas import BacktestRequest, BacktestResult, ParameterSweepRequest
 from app.services.backtester import BacktestEngine
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+import asyncio
 
 router = APIRouter()
 engine = BacktestEngine()
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/run", response_model=BacktestResult)
-async def run_backtest(request: BacktestRequest):
+@limiter.limit("10/minute")
+async def run_backtest(request: Request, backtest_request: BacktestRequest):
     """Run a single backtest."""
     try:
-        if request.strategy == "sma_crossover" and request.fast_window >= request.slow_window:
+        if backtest_request.strategy == "sma_crossover" and backtest_request.fast_window >= backtest_request.slow_window:
             raise HTTPException(
                 status_code=400,
                 detail="Fast window must be less than slow window",
             )
-        result = engine.run_backtest(request)
+        result = await asyncio.to_thread(engine.run_backtest, backtest_request)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -22,19 +27,20 @@ async def run_backtest(request: BacktestRequest):
         raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
 
 @router.post("/sweep")
-async def parameter_sweep(request: ParameterSweepRequest):
+@limiter.limit("5/minute")
+async def parameter_sweep(request: Request, sweep_request: ParameterSweepRequest):
     """Run parameter optimization sweep. Can be slow — warn users."""
     try:
-        total_combos = len(request.fast_window_range) * len(request.slow_window_range)
+        total_combos = len(sweep_request.fast_window_range) * len(sweep_request.slow_window_range)
         if total_combos > 100:
             raise HTTPException(
                 status_code=400,
                 detail=f"Too many combinations ({total_combos}). Max 100. Reduce parameter ranges.",
             )
-        results = engine.run_parameter_sweep(request)
+        results = await asyncio.to_thread(engine.run_parameter_sweep, sweep_request)
         return {
-            "ticker": request.ticker,
-            "strategy": request.strategy,
+            "ticker": sweep_request.ticker,
+            "strategy": sweep_request.strategy,
             "combinations_tested": len(results),
             "results": results,
         }

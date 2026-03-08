@@ -11,15 +11,23 @@ import type {
   ConvertResponse,
 } from "./types"
 
-const DEFAULT_BASE_URL = "http://localhost:8000"
+const DEV_BASE_URL = "http://localhost:8000"
 const TIMEOUT_MS = 120_000
 const MAX_RETRIES = 1
 
 function getBaseUrl(): string {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("quantedge_api_url") || DEFAULT_BASE_URL
+    // Check localStorage override first
+    const stored = localStorage.getItem("quantedge_api_url")
+    if (stored) return stored
+
+    // On HuggingFace Spaces or any non-localhost deployment, use same origin
+    const hostname = window.location.hostname
+    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+      return window.location.origin
+    }
   }
-  return DEFAULT_BASE_URL
+  return DEV_BASE_URL
 }
 
 async function fetchWithRetry(
