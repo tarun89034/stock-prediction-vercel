@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Finnhub API
     finnhub_api_key: Optional[str] = None
 
+    # TwelveData API (backup data source)
+    twelvedata_api_key: Optional[str] = None
+
     class Config:
         env_file = str(_env_file)
 

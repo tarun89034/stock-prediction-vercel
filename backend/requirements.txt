@@ -3,7 +3,7 @@ uvicorn[standard]==0.30.0
 pydantic-settings==2.5.0
 sqlalchemy[asyncio]==2.0.35
 aiosqlite==0.20.0
-yfinance==0.2.43
+yfinance==0.2.54
 vectorbt==0.26.2
 xgboost==2.1.1
 shap==0.46.0
@@ -13,3 +13,4 @@ numpy==1.26.4
 quantstats==0.0.62
 finnhub-python
 httpx==0.28.1
+slowapi==0.1.9

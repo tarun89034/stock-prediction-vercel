@@ -1,16 +1,29 @@
 import yfinance as yf
 import pandas as pd
 from datetime import date, timedelta
-from functools import lru_cache
 from typing import Optional
 import logging
+import time
+import hashlib
 
 logger = logging.getLogger(__name__)
+
+# ─── In-memory cache for historical data ───
+_data_cache: dict[str, dict] = {}
+CACHE_TTL = 300  # 5 minutes
+
+
+def _cache_key(ticker: str, start: date, end: date, interval: str) -> str:
+    """Generate a deterministic cache key."""
+    raw = f"{ticker}:{start}:{end}:{interval}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
 
 class DataFetcher:
     """
     Wrapper around yfinance.
     Rule: yfinance is ONLY for historical data. Never for live/production feeds.
+    Includes in-memory TTL cache to avoid redundant fetches.
     """
 
     @staticmethod
@@ -20,7 +33,15 @@ class DataFetcher:
         end_date: date,
         interval: str = "1d",
     ) -> pd.DataFrame:
-        """Fetch OHLCV data. Returns cleaned DataFrame."""
+        """Fetch OHLCV data. Returns cleaned DataFrame. Uses TTL cache."""
+        key = _cache_key(ticker, start_date, end_date, interval)
+
+        # Check cache
+        cached = _data_cache.get(key)
+        if cached and (time.time() - cached["ts"]) < CACHE_TTL:
+            logger.info(f"Cache hit for {ticker} ({len(cached['df'])} rows)")
+            return cached["df"].copy()
+
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(
@@ -36,6 +57,14 @@ class DataFetcher:
             df.columns = ["open", "high", "low", "close", "volume"]
             df.index.name = "date"
             df.dropna(inplace=True)
+
+            # Store in cache
+            _data_cache[key] = {"df": df.copy(), "ts": time.time()}
+
+            # Evict old entries (keep max 50)
+            if len(_data_cache) > 50:
+                oldest_key = min(_data_cache, key=lambda k: _data_cache[k]["ts"])
+                del _data_cache[oldest_key]
 
             logger.info(f"Fetched {len(df)} rows for {ticker}")
             return df

@@ -1,9 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/health")
-async def metrics_health():
+@limiter.limit("30/minute")
+async def metrics_health(request: Request):
     """Metrics are embedded in backtest results. This route is a placeholder."""
     return {
         "available_metrics": [
