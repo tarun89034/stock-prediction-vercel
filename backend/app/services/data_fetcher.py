@@ -1,12 +1,85 @@
 import yfinance as yf
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import Optional
 import logging
 import time
 import hashlib
+import httpx
 
 logger = logging.getLogger(__name__)
+
+# ─── TwelveData fallback helpers ───
+_TWELVEDATA_BASE = "https://api.twelvedata.com"
+
+def _td_api_key() -> Optional[str]:
+    """Lazy-load TwelveData API key from settings (avoids circular import)."""
+    try:
+        from app.config import settings
+        return settings.twelvedata_api_key
+    except Exception:
+        return None
+
+
+def _td_quote(ticker: str) -> Optional[dict]:
+    """Fetch a quote from TwelveData. Returns raw JSON dict or None."""
+    api_key = _td_api_key()
+    if not api_key:
+        return None
+    try:
+        # Strip yfinance-style suffixes — TwelveData uses its own exchange param
+        # For US tickers (no suffix) this works directly.
+        symbol = ticker.split(".")[0] if "." in ticker else ticker
+        # Remove ^ prefix for index tickers — TwelveData doesn't use it
+        symbol = symbol.lstrip("^")
+        resp = httpx.get(
+            f"{_TWELVEDATA_BASE}/quote",
+            params={"symbol": symbol, "apikey": api_key},
+            timeout=10,
+        )
+        data = resp.json()
+        if data.get("status") == "error" or "code" in data:
+            logger.debug(f"TwelveData quote failed for {ticker}: {data.get('message', '')}")
+            return None
+        return data
+    except Exception as e:
+        logger.debug(f"TwelveData quote exception for {ticker}: {e}")
+        return None
+
+
+def _td_time_series(ticker: str, outputsize: int = 30, interval: str = "1day",
+                    start_date: str = "", end_date: str = "") -> Optional[list[dict]]:
+    """Fetch time series from TwelveData. Returns list of OHLCV dicts or None."""
+    api_key = _td_api_key()
+    if not api_key:
+        return None
+    try:
+        symbol = ticker.split(".")[0] if "." in ticker else ticker
+        symbol = symbol.lstrip("^")
+        params: dict = {"symbol": symbol, "interval": interval, "apikey": api_key}
+        if start_date and end_date:
+            params["start_date"] = start_date
+            params["end_date"] = end_date
+            # TwelveData max outputsize is 5000
+            params["outputsize"] = min(outputsize, 5000)
+        else:
+            params["outputsize"] = min(outputsize, 5000)
+        resp = httpx.get(
+            f"{_TWELVEDATA_BASE}/time_series",
+            params=params,
+            timeout=15,
+        )
+        data = resp.json()
+        if data.get("status") == "error" or "code" in data:
+            logger.debug(f"TwelveData time_series failed for {ticker}: {data.get('message', '')}")
+            return None
+        values = data.get("values")
+        if not values:
+            return None
+        return values
+    except Exception as e:
+        logger.debug(f"TwelveData time_series exception for {ticker}: {e}")
+        return None
 
 # ─── In-memory cache for historical data ───
 _data_cache: dict[str, dict] = {}
@@ -95,7 +168,8 @@ class DataFetcher:
         end_date: date,
         interval: str = "1d",
     ) -> pd.DataFrame:
-        """Fetch OHLCV data. Returns cleaned DataFrame. Uses TTL cache."""
+        """Fetch OHLCV data. Returns cleaned DataFrame. Uses TTL cache.
+        Tries yfinance first, falls back to TwelveData."""
         key = _cache_key(ticker, start_date, end_date, interval)
 
         # Check cache
@@ -104,6 +178,9 @@ class DataFetcher:
             logger.info(f"Cache hit for {ticker} ({len(cached['df'])} rows)")
             return cached["df"].copy()
 
+        df = pd.DataFrame()
+
+        # 1. Try yfinance
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(
@@ -111,29 +188,72 @@ class DataFetcher:
                 end=end_date.isoformat(),
                 interval=interval,
             )
-            if df.empty:
-                raise ValueError(f"No data returned for {ticker}")
+        except Exception as e:
+            logger.warning(f"yfinance fetch failed for {ticker}: {e}")
 
-            # Clean columns
+        # 2. Fallback: TwelveData time series
+        if df.empty:
+            logger.info(f"yfinance returned empty for {ticker}, trying TwelveData fallback")
+            # Map yfinance interval to TwelveData interval
+            td_interval_map = {
+                "1d": "1day", "1wk": "1week", "1mo": "1month",
+                "1h": "1h", "5m": "5min", "15m": "15min", "30m": "30min",
+                "60m": "1h", "90m": "1h",
+            }
+            td_interval = td_interval_map.get(interval, "1day")
+            # Estimate output size from date range
+            delta_days = (end_date - start_date).days
+            outputsize = min(delta_days + 30, 5000)  # extra buffer
+
+            values = _td_time_series(
+                ticker,
+                outputsize=outputsize,
+                interval=td_interval,
+                start_date=start_date.isoformat(),
+                end_date=end_date.isoformat(),
+            )
+            if values:
+                try:
+                    rows = []
+                    for v in values:
+                        rows.append({
+                            "date": pd.Timestamp(v["datetime"]),
+                            "open": float(v["open"]),
+                            "high": float(v["high"]),
+                            "low": float(v["low"]),
+                            "close": float(v["close"]),
+                            "volume": int(v.get("volume", 0)),
+                        })
+                    df = pd.DataFrame(rows)
+                    df.set_index("date", inplace=True)
+                    df.sort_index(inplace=True)
+                    df.index.name = "date"
+                except (KeyError, ValueError, TypeError) as e:
+                    logger.warning(f"TwelveData historical parse error for {ticker}: {e}")
+                    df = pd.DataFrame()
+
+        if df.empty:
+            raise ValueError(f"No data returned for {ticker}")
+
+        # Clean columns (yfinance returns Title Case, TwelveData already lowercase)
+        if "Open" in df.columns:
             df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
             df.columns = ["open", "high", "low", "close", "volume"]
-            df.index.name = "date"
-            df.dropna(inplace=True)
+        elif "open" in df.columns:
+            df = df[["open", "high", "low", "close", "volume"]].copy()
+        df.index.name = "date"
+        df.dropna(inplace=True)
 
-            # Store in cache
-            _data_cache[key] = {"df": df.copy(), "ts": time.time()}
+        # Store in cache
+        _data_cache[key] = {"df": df.copy(), "ts": time.time()}
 
-            # Evict old entries (keep max 50)
-            if len(_data_cache) > 50:
-                oldest_key = min(_data_cache, key=lambda k: _data_cache[k]["ts"])
-                del _data_cache[oldest_key]
+        # Evict old entries (keep max 50)
+        if len(_data_cache) > 50:
+            oldest_key = min(_data_cache, key=lambda k: _data_cache[k]["ts"])
+            del _data_cache[oldest_key]
 
-            logger.info(f"Fetched {len(df)} rows for {ticker}")
-            return df
-
-        except Exception as e:
-            logger.error(f"Failed to fetch data for {ticker}: {e}")
-            raise
+        logger.info(f"Fetched {len(df)} rows for {ticker}")
+        return df
 
     @staticmethod
     def get_benchmark_for_ticker(ticker: str) -> str:
@@ -186,48 +306,90 @@ class DataFetcher:
 
     @staticmethod
     def get_current_price(ticker: str) -> dict:
-        """Get the latest available price with change data. Returns dict with price, change, changePct, prevClose."""
+        """Get the latest available price with change data. Tries yfinance, falls back to TwelveData.
+        Returns dict with price, change, changePct, prevClose."""
+        # 1. Try yfinance
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="5d")
-            if hist.empty:
-                raise ValueError(f"Cannot get current price for {ticker}")
-            price = float(hist["Close"].iloc[-1])
-            prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
-            change = round(price - prev_close, 2)
-            change_pct = round((change / prev_close) * 100, 2) if prev_close != 0 else 0.0
-            return {
-                "price": price,
-                "change": change,
-                "changePct": change_pct,
-                "prevClose": prev_close,
-            }
-        except Exception as e:
-            logger.error(f"Failed to get price for {ticker}: {e}")
-            raise ValueError(f"Cannot get current price for {ticker}: {e}")
+            if not hist.empty and len(hist) >= 1:
+                price = float(hist["Close"].iloc[-1])
+                prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
+                change = round(price - prev_close, 2)
+                change_pct = round((change / prev_close) * 100, 2) if prev_close != 0 else 0.0
+                return {
+                    "price": price,
+                    "change": change,
+                    "changePct": change_pct,
+                    "prevClose": prev_close,
+                }
+        except Exception:
+            pass
+
+        # 2. Fallback: TwelveData quote
+        logger.info(f"yfinance price failed for {ticker}, trying TwelveData fallback")
+        td = _td_quote(ticker)
+        if td and td.get("close"):
+            try:
+                price = float(td["close"])
+                prev_close = float(td.get("previous_close", price))
+                change = float(td.get("change", 0))
+                change_pct = float(td.get("percent_change", 0))
+                return {
+                    "price": price,
+                    "change": round(change, 2),
+                    "changePct": round(change_pct, 2),
+                    "prevClose": prev_close,
+                }
+            except (ValueError, TypeError) as e:
+                logger.warning(f"TwelveData price parse error for {ticker}: {e}")
+
+        raise ValueError(f"Cannot get current price for {ticker}")
 
     @staticmethod
     def get_sparkline(ticker: str, days: int = 30) -> list[float]:
-        """Return the last `days` daily closing prices for sparkline charts."""
+        """Return the last `days` daily closing prices for sparkline charts.
+        Tries yfinance first, falls back to TwelveData."""
+        # 1. Try yfinance
         try:
             stock = yf.Ticker(ticker)
-            # Fetch extra days to account for weekends/holidays
             hist = stock.history(period=f"{days + 15}d")
-            if hist.empty:
-                return []
-            closes = hist["Close"].dropna().tolist()
-            # Return only the last `days` data points
-            return [round(float(v), 2) for v in closes[-days:]]
-        except Exception as e:
-            logger.warning(f"Sparkline fetch failed for {ticker}: {e}")
-            return []
+            if not hist.empty:
+                closes = hist["Close"].dropna().tolist()
+                if closes:
+                    return [round(float(v), 2) for v in closes[-days:]]
+        except Exception:
+            pass
+
+        # 2. Fallback: TwelveData time series
+        logger.info(f"yfinance sparkline failed for {ticker}, trying TwelveData fallback")
+        values = _td_time_series(ticker, outputsize=days + 5, interval="1day")
+        if values:
+            try:
+                # TwelveData returns newest first, reverse for chronological order
+                closes = [round(float(v["close"]), 2) for v in reversed(values)]
+                return closes[-days:]
+            except (KeyError, ValueError, TypeError) as e:
+                logger.warning(f"TwelveData sparkline parse error for {ticker}: {e}")
+
+        return []
 
     @staticmethod
     def validate_ticker(ticker: str) -> bool:
-        """Check if a ticker symbol is valid by fetching recent history."""
+        """Check if a ticker symbol is valid. Tries yfinance first, falls back to TwelveData."""
+        # 1. Try yfinance
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="5d")
-            return not hist.empty and len(hist) > 0
+            if not hist.empty and len(hist) > 0:
+                return True
         except Exception:
-            return False
+            pass
+
+        # 2. Fallback: TwelveData quote
+        logger.info(f"yfinance failed for {ticker}, trying TwelveData fallback")
+        td = _td_quote(ticker)
+        if td and td.get("close") and td.get("name"):
+            return True
+
+        return False
