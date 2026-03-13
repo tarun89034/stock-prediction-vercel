@@ -3,6 +3,7 @@ from app.services.data_fetcher import DataFetcher
 from app.services.currency import CurrencyService
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from urllib.parse import unquote
 import asyncio
 
 router = APIRouter()
@@ -10,25 +11,28 @@ fetcher = DataFetcher()
 currency_service = CurrencyService()
 limiter = Limiter(key_func=get_remote_address)
 
-@router.get("/price/{ticker}")
+@router.get("/price/{ticker:path}")
 @limiter.limit("30/minute")
 async def get_current_price(request: Request, ticker: str):
+    ticker = unquote(ticker).strip()
     try:
-        price = await asyncio.to_thread(fetcher.get_current_price, ticker)
-        return {"ticker": ticker, "price": price}
+        data = await asyncio.to_thread(fetcher.get_current_price, ticker)
+        return {"ticker": ticker, **data}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-@router.get("/validate/{ticker}")
+@router.get("/validate/{ticker:path}")
 @limiter.limit("30/minute")
 async def validate_ticker(request: Request, ticker: str):
+    ticker = unquote(ticker).strip()
     valid = await asyncio.to_thread(fetcher.validate_ticker, ticker)
     return {"ticker": ticker, "valid": valid}
 
-@router.get("/historical/{ticker}")
+@router.get("/historical/{ticker:path}")
 @limiter.limit("20/minute")
 async def get_historical(request: Request, ticker: str, start: str, end: str):
     from datetime import date
+    ticker = unquote(ticker).strip()
     try:
         df = await asyncio.to_thread(
             fetcher.fetch_historical, ticker, date.fromisoformat(start), date.fromisoformat(end)
@@ -40,6 +44,14 @@ async def get_historical(request: Request, ticker: str, start: str, end: str):
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/sparkline/{ticker:path}")
+@limiter.limit("30/minute")
+async def get_sparkline(request: Request, ticker: str, days: int = Query(default=30, ge=5, le=90)):
+    """Return the last N daily closing prices for sparkline charts."""
+    ticker = unquote(ticker).strip()
+    prices = await asyncio.to_thread(fetcher.get_sparkline, ticker, days)
+    return {"ticker": ticker, "days": len(prices), "prices": prices}
 
 
 # ─── Currency Conversion Endpoints ───

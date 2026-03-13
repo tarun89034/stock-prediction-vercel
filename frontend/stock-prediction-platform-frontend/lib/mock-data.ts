@@ -12,43 +12,51 @@ function generateSparkline(start: number, volatility: number, points = 30) {
 export const marketIndices = [
   {
     name: "S&P 500",
-    symbol: "SPX",
+    symbol: "^GSPC",
     value: 5234.18,
     change: 28.45,
     changePct: 0.55,
     sparkline: generateSparkline(5100, 30),
   },
   {
-    name: "NASDAQ",
-    symbol: "IXIC",
-    value: 16742.39,
-    change: -45.22,
-    changePct: -0.27,
-    sparkline: generateSparkline(16500, 80),
+    name: "STOXX Europe 600",
+    symbol: "^STOXX",
+    value: 512.34,
+    change: 3.21,
+    changePct: 0.63,
+    sparkline: generateSparkline(505, 3),
   },
   {
-    name: "DOW",
-    symbol: "DJI",
-    value: 39282.33,
-    change: 156.87,
-    changePct: 0.4,
-    sparkline: generateSparkline(38800, 200),
+    name: "S&P/ASX 200",
+    symbol: "^AXJO",
+    value: 7842.60,
+    change: -18.45,
+    changePct: -0.23,
+    sparkline: generateSparkline(7800, 25),
   },
   {
-    name: "VIX",
-    symbol: "VIX",
-    value: 14.32,
-    change: -0.78,
-    changePct: -5.16,
-    sparkline: generateSparkline(15, 0.5),
+    name: "CSI 300",
+    symbol: "000300.SS",
+    value: 3542.15,
+    change: 15.67,
+    changePct: 0.44,
+    sparkline: generateSparkline(3500, 20),
   },
   {
-    name: "Russell 2000",
-    symbol: "RUT",
-    value: 2084.55,
-    change: 12.33,
-    changePct: 0.59,
-    sparkline: generateSparkline(2040, 15),
+    name: "NIFTY 50",
+    symbol: "^NSEI",
+    value: 22350.80,
+    change: 120.35,
+    changePct: 0.54,
+    sparkline: generateSparkline(22100, 100),
+  },
+  {
+    name: "JSE All Share",
+    symbol: "^J203.JO",
+    value: 68420.50,
+    change: -245.30,
+    changePct: -0.36,
+    sparkline: generateSparkline(68000, 300),
   },
 ]
 
@@ -85,7 +93,7 @@ function generateEquityCurve(days: number, initialCapital: number, returnPct: nu
 const { curve, drawdownCurve } = generateEquityCurve(365, 10000, 24.5)
 
 export const mockBacktestResult: BacktestResult = {
-  ticker: "AAPL",
+  ticker: "RELIANCE.NS",
   strategy: "sma_crossover",
   initial_capital: 10000,
   final_capital: 12450.32,
@@ -122,7 +130,7 @@ export const mockBacktestResult: BacktestResult = {
 }
 
 export const mockPredictionResult: PredictionResult = {
-  ticker: "AAPL",
+  ticker: "RELIANCE.NS",
   current_price: 182.52,
   predictions: [
     { date: "2026-02-21", predicted_direction: 0.62, confidence: 0.62, label: "UP", disclaimer: "Short-term prediction" },
@@ -145,7 +153,7 @@ export const mockPredictionResult: PredictionResult = {
 }
 
 export const mockSweepResult: ParameterSweepResult = {
-  ticker: "AAPL",
+  ticker: "RELIANCE.NS",
   strategy: "sma_crossover",
   combinations_tested: 16,
   results: [

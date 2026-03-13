@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional
 
 class BacktestRequest(BaseModel):
-    ticker: str = Field(..., json_schema_extra={"example": "AAPL"})
+    ticker: str = Field(..., json_schema_extra={"example": "RELIANCE.NS"})
     start_date: date = Field(..., json_schema_extra={"example": "2020-01-01"})
     end_date: date = Field(..., json_schema_extra={"example": "2025-01-01"})
     strategy: str = Field(..., json_schema_extra={"example": "sma_crossover"})  # sma_crossover, rsi, macd
@@ -37,7 +37,7 @@ class BacktestResult(BaseModel):
     trades: list[dict]
 
 class PredictionRequest(BaseModel):
-    ticker: str = Field(..., json_schema_extra={"example": "AAPL"})
+    ticker: str = Field(..., json_schema_extra={"example": "RELIANCE.NS"})
     prediction_days: int = Field(default=5, ge=1, le=30)
 
 class PredictionResult(BaseModel):

@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { formatCurrency } from "@/lib/format"
 
 interface PredictConfigProps {
   onPredict: (ticker: string, days: number) => void
@@ -17,6 +18,7 @@ export function PredictConfig({ onPredict, isRunning }: PredictConfigProps) {
   const [tickerValid, setTickerValid] = useState<boolean | null>(null)
   const [tickerPrice, setTickerPrice] = useState<number | null>(null)
   const [tickerChecking, setTickerChecking] = useState(false)
+  const [tickerError, setTickerError] = useState<string | null>(null)
   const [horizon, setHorizon] = useState(5)
 
   // Real ticker validation via backend API
@@ -24,15 +26,25 @@ export function PredictConfig({ onPredict, isRunning }: PredictConfigProps) {
     if (!ticker) {
       setTickerValid(null)
       setTickerPrice(null)
+      setTickerError(null)
       return
     }
     const timeout = setTimeout(async () => {
       setTickerChecking(true)
+      setTickerError(null)
       try {
         const [validateRes, priceRes] = await Promise.allSettled([
           api.validateTicker(ticker.toUpperCase()),
           api.getPrice(ticker.toUpperCase()),
         ])
+
+        if (validateRes.status === "rejected" && priceRes.status === "rejected") {
+          // Both failed — likely network/backend issue, not an invalid ticker
+          setTickerValid(null)
+          setTickerPrice(null)
+          setTickerError("Cannot reach backend — is the server running on port 8000?")
+          return
+        }
 
         const isValid = validateRes.status === "fulfilled" && validateRes.value.valid
         setTickerValid(isValid)
@@ -43,8 +55,9 @@ export function PredictConfig({ onPredict, isRunning }: PredictConfigProps) {
           setTickerPrice(null)
         }
       } catch {
-        setTickerValid(false)
+        setTickerValid(null)
         setTickerPrice(null)
+        setTickerError("Cannot reach backend — is the server running on port 8000?")
       } finally {
         setTickerChecking(false)
       }
@@ -72,7 +85,7 @@ export function PredictConfig({ onPredict, isRunning }: PredictConfigProps) {
           <input
             value={ticker}
             onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            placeholder="Enter ticker (e.g., AAPL)"
+            placeholder="Enter ticker (e.g., AAPL, RELIANCE.NS, 0700.HK)"
             className="w-full rounded-lg border border-border bg-secondary py-2.5 pl-9 pr-10 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
           {tickerChecking ? (
@@ -87,10 +100,11 @@ export function PredictConfig({ onPredict, isRunning }: PredictConfigProps) {
         </div>
         {tickerValid && tickerPrice && (
           <p className="mt-1.5 font-mono text-xs text-muted-foreground">
-            {ticker} — ${tickerPrice.toFixed(2)}
+            {ticker} — {formatCurrency(tickerPrice)}
           </p>
         )}
         {tickerValid === false && !tickerChecking && <p className="mt-1.5 text-xs text-loss">Invalid ticker symbol</p>}
+        {tickerError && !tickerChecking && <p className="mt-1.5 text-xs text-warning">{tickerError}</p>}
       </div>
 
       {/* Prediction Horizon */}
