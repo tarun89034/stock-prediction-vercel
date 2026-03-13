@@ -6,6 +6,7 @@ import logging
 import time
 import hashlib
 import httpx
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,43 @@ def _td_time_series(ticker: str, outputsize: int = 30, interval: str = "1day",
     except Exception as e:
         logger.debug(f"TwelveData time_series exception for {ticker}: {e}")
         return None
+
+# ─── TwelveData rate limiter (token bucket) ───
+class _TwelveDataRateLimiter:
+    """Simple token-bucket rate limiter for TwelveData free tier (8 calls/min).
+    Thread-safe. Blocks if rate limit would be exceeded."""
+
+    def __init__(self, max_calls: int = 7, period_seconds: float = 60.0):
+        # Use 7 instead of 8 to leave a small margin
+        self._max_calls = max_calls
+        self._period = period_seconds
+        self._timestamps: list[float] = []
+        self._lock = threading.Lock()
+
+    def acquire(self, timeout: float = 90.0) -> bool:
+        """Wait until a call slot is available. Returns True if acquired, False on timeout."""
+        deadline = time.time() + timeout
+        while True:
+            with self._lock:
+                now = time.time()
+                # Purge timestamps older than the window
+                self._timestamps = [t for t in self._timestamps if now - t < self._period]
+                if len(self._timestamps) < self._max_calls:
+                    self._timestamps.append(now)
+                    return True
+                # Calculate wait time until oldest timestamp expires
+                wait = self._timestamps[0] + self._period - now
+            if time.time() + wait > deadline:
+                logger.warning("TwelveData rate limiter timeout — skipping call")
+                return False
+            logger.debug(f"TwelveData rate limiter: waiting {wait:.1f}s for slot")
+            time.sleep(min(wait + 0.1, 5.0))  # sleep in small increments
+
+_td_rate_limiter = _TwelveDataRateLimiter()
+
+# ─── TwelveData response cache ───
+_td_cache: dict[str, dict] = {}
+TD_CACHE_TTL = 600  # 10 minutes — longer than yfinance cache since TD calls are precious
 
 # ─── In-memory cache for historical data ───
 _data_cache: dict[str, dict] = {}
@@ -191,7 +229,7 @@ class DataFetcher:
         except Exception as e:
             logger.warning(f"yfinance fetch failed for {ticker}: {e}")
 
-        # 2. Fallback: TwelveData time series
+        # 2. Fallback: TwelveData time series (rate-limited & cached)
         if df.empty:
             logger.info(f"yfinance returned empty for {ticker}, trying TwelveData fallback")
             # Map yfinance interval to TwelveData interval
@@ -205,13 +243,31 @@ class DataFetcher:
             delta_days = (end_date - start_date).days
             outputsize = min(delta_days + 30, 5000)  # extra buffer
 
-            values = _td_time_series(
-                ticker,
-                outputsize=outputsize,
-                interval=td_interval,
-                start_date=start_date.isoformat(),
-                end_date=end_date.isoformat(),
-            )
+            # Check TwelveData-specific cache first (longer TTL)
+            td_cache_key = f"td:{ticker}:{start_date}:{end_date}:{td_interval}"
+            td_cached = _td_cache.get(td_cache_key)
+            if td_cached and (time.time() - td_cached["ts"]) < TD_CACHE_TTL:
+                logger.info(f"TwelveData cache hit for {ticker}")
+                values = td_cached["values"]
+            else:
+                # Acquire rate limiter slot before calling TwelveData
+                if not _td_rate_limiter.acquire(timeout=90):
+                    logger.warning(f"TwelveData rate limit exceeded, skipping fallback for {ticker}")
+                    values = None
+                else:
+                    values = _td_time_series(
+                        ticker,
+                        outputsize=outputsize,
+                        interval=td_interval,
+                        start_date=start_date.isoformat(),
+                        end_date=end_date.isoformat(),
+                    )
+                    # Cache the raw response even if None (avoids repeated failed calls)
+                    _td_cache[td_cache_key] = {"values": values, "ts": time.time()}
+                    # Evict old TD cache entries
+                    if len(_td_cache) > 30:
+                        oldest = min(_td_cache, key=lambda k: _td_cache[k]["ts"])
+                        del _td_cache[oldest]
             if values:
                 try:
                     rows = []
@@ -306,9 +362,10 @@ class DataFetcher:
 
     @staticmethod
     def get_current_price(ticker: str) -> dict:
-        """Get the latest available price with change data. Tries yfinance, falls back to TwelveData.
+        """Get the latest available price with change data using yfinance only.
+        TwelveData is NOT used here to conserve rate-limited API calls
+        for backtesting/prediction where they matter most.
         Returns dict with price, change, changePct, prevClose."""
-        # 1. Try yfinance
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="5d")
@@ -326,31 +383,13 @@ class DataFetcher:
         except Exception:
             pass
 
-        # 2. Fallback: TwelveData quote
-        logger.info(f"yfinance price failed for {ticker}, trying TwelveData fallback")
-        td = _td_quote(ticker)
-        if td and td.get("close"):
-            try:
-                price = float(td["close"])
-                prev_close = float(td.get("previous_close", price))
-                change = float(td.get("change", 0))
-                change_pct = float(td.get("percent_change", 0))
-                return {
-                    "price": price,
-                    "change": round(change, 2),
-                    "changePct": round(change_pct, 2),
-                    "prevClose": prev_close,
-                }
-            except (ValueError, TypeError) as e:
-                logger.warning(f"TwelveData price parse error for {ticker}: {e}")
-
         raise ValueError(f"Cannot get current price for {ticker}")
 
     @staticmethod
     def get_sparkline(ticker: str, days: int = 30) -> list[float]:
         """Return the last `days` daily closing prices for sparkline charts.
-        Tries yfinance first, falls back to TwelveData."""
-        # 1. Try yfinance
+        Uses yfinance only. TwelveData is NOT used here to conserve
+        rate-limited API calls for backtesting/prediction."""
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period=f"{days + 15}d")
@@ -361,23 +400,13 @@ class DataFetcher:
         except Exception:
             pass
 
-        # 2. Fallback: TwelveData time series
-        logger.info(f"yfinance sparkline failed for {ticker}, trying TwelveData fallback")
-        values = _td_time_series(ticker, outputsize=days + 5, interval="1day")
-        if values:
-            try:
-                # TwelveData returns newest first, reverse for chronological order
-                closes = [round(float(v["close"]), 2) for v in reversed(values)]
-                return closes[-days:]
-            except (KeyError, ValueError, TypeError) as e:
-                logger.warning(f"TwelveData sparkline parse error for {ticker}: {e}")
-
         return []
 
     @staticmethod
     def validate_ticker(ticker: str) -> bool:
-        """Check if a ticker symbol is valid. Tries yfinance first, falls back to TwelveData."""
-        # 1. Try yfinance
+        """Check if a ticker symbol is valid using yfinance only.
+        TwelveData is NOT used here to conserve rate-limited API calls
+        for backtesting/prediction where they matter most."""
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="5d")
@@ -385,11 +414,5 @@ class DataFetcher:
                 return True
         except Exception:
             pass
-
-        # 2. Fallback: TwelveData quote
-        logger.info(f"yfinance failed for {ticker}, trying TwelveData fallback")
-        td = _td_quote(ticker)
-        if td and td.get("close") and td.get("name"):
-            return True
 
         return False
