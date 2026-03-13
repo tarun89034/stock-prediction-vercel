@@ -41,9 +41,9 @@ class BacktestEngine:
             freq="1D",
         )
 
-        # 4. Calculate benchmark for Alpha/Beta
+        # 4. Calculate benchmark for Alpha/Beta (market-aware)
         benchmark_returns = self.data_fetcher.fetch_benchmark(
-            request.start_date, request.end_date
+            request.start_date, request.end_date, ticker=request.ticker
         )
         strategy_returns = pf.returns()
 

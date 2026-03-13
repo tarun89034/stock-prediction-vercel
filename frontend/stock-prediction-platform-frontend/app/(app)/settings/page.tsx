@@ -151,7 +151,7 @@ export default function SettingsPage() {
               Display Currency
             </label>
             <p className="mb-3 text-xs text-muted-foreground">
-              All stock prices (originally in USD) will be converted to your selected currency in real time.
+              All prices will be converted to your selected currency using live exchange rates.
             </p>
             <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
               <SelectTrigger className="w-full">

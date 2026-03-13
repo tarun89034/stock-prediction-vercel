@@ -189,7 +189,7 @@ export function ResultsPanel({ result }: ResultsPanelProps) {
               label="Alpha (annualized)"
               value={formatNumber(result.alpha, 4)}
               color={((result.alpha ?? 0) >= 0) ? "text-profit" : "text-loss"}
-              tooltip="Excess return over S&P 500"
+              tooltip="Excess return over the regional benchmark index"
             />
             <MetricCard
               label="Beta"

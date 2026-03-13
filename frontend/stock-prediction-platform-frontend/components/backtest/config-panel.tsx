@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { formatCurrency } from "@/lib/format"
+import { useStore } from "@/lib/store"
 import type { Strategy } from "@/lib/types"
 
 interface ConfigPanelProps {
@@ -83,21 +85,32 @@ export function ConfigPanel({ onRunBacktest, onRunSweep, isRunning, isSweeping }
   const [commission, setCommission] = useState(0.1)
   const [initialCapital, setInitialCapital] = useState(10000)
   const [costsOpen, setCostsOpen] = useState(false)
+  const [tickerError, setTickerError] = useState<string | null>(null)
 
   // Real ticker validation via backend API
   useEffect(() => {
     if (!ticker) {
       setTickerValid(null)
       setTickerPrice(null)
+      setTickerError(null)
       return
     }
     const timeout = setTimeout(async () => {
       setTickerChecking(true)
+      setTickerError(null)
       try {
         const [validateRes, priceRes] = await Promise.allSettled([
           api.validateTicker(ticker.toUpperCase()),
           api.getPrice(ticker.toUpperCase()),
         ])
+
+        if (validateRes.status === "rejected" && priceRes.status === "rejected") {
+          // Both failed — likely network/backend issue, not an invalid ticker
+          setTickerValid(null)
+          setTickerPrice(null)
+          setTickerError("Cannot reach backend — is the server running on port 8000?")
+          return
+        }
 
         const isValid = validateRes.status === "fulfilled" && validateRes.value.valid
         setTickerValid(isValid)
@@ -108,8 +121,9 @@ export function ConfigPanel({ onRunBacktest, onRunSweep, isRunning, isSweeping }
           setTickerPrice(null)
         }
       } catch {
-        setTickerValid(false)
+        setTickerValid(null)
         setTickerPrice(null)
+        setTickerError("Cannot reach backend — is the server running on port 8000?")
       } finally {
         setTickerChecking(false)
       }
@@ -148,7 +162,7 @@ export function ConfigPanel({ onRunBacktest, onRunSweep, isRunning, isSweeping }
           <input
             value={ticker}
             onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            placeholder="Enter ticker (e.g., AAPL)"
+            placeholder="Enter ticker (e.g., AAPL, RELIANCE.NS, 0700.HK)"
             className="w-full rounded-lg border border-border bg-secondary py-2.5 pl-9 pr-10 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
           {tickerChecking ? (
@@ -167,11 +181,14 @@ export function ConfigPanel({ onRunBacktest, onRunSweep, isRunning, isSweeping }
         </div>
         {tickerValid && tickerPrice && (
           <p className="mt-1.5 font-mono text-xs text-muted-foreground">
-            {ticker} — ${tickerPrice.toFixed(2)}
+            {ticker} — {formatCurrency(tickerPrice)}
           </p>
         )}
         {tickerValid === false && !tickerChecking && (
           <p className="mt-1.5 text-xs text-loss">Invalid ticker symbol</p>
+        )}
+        {tickerError && !tickerChecking && (
+          <p className="mt-1.5 text-xs text-warning">{tickerError}</p>
         )}
       </div>
 
@@ -333,7 +350,7 @@ export function ConfigPanel({ onRunBacktest, onRunSweep, isRunning, isSweeping }
             <Slider min={0} max={2} step={0.05} value={[commission]} onValueChange={([v]) => setCommission(v)} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Initial Capital ($)</label>
+            <label className="mb-1 block text-xs text-muted-foreground">Initial Capital ({useStore.getState().currencySymbol})</label>
             <input
               type="number"
               value={initialCapital}

@@ -11,9 +11,11 @@ import type {
   ConvertResponse,
 } from "./types"
 
-const DEV_BASE_URL = "http://localhost:8000"
+const DEV_BASE_URL =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+  "http://localhost:8000"
 const TIMEOUT_MS = 120_000
-const MAX_RETRIES = 1
+const MAX_RETRIES = 2
 
 function getBaseUrl(): string {
   if (typeof window !== "undefined") {
@@ -23,7 +25,12 @@ function getBaseUrl(): string {
 
     // On HuggingFace Spaces or any non-localhost deployment, use same origin
     const hostname = window.location.hostname
-    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+    if (
+      hostname !== "localhost" &&
+      hostname !== "127.0.0.1" &&
+      !hostname.startsWith("192.168.") &&
+      hostname !== "0.0.0.0"
+    ) {
       return window.location.origin
     }
   }
@@ -44,7 +51,16 @@ async function fetchWithRetry(
       signal: controller.signal,
     })
 
+    if (response.status === 429 && retries > 0) {
+      // Rate limited — wait and retry
+      clearTimeout(timeoutId)
+      await new Promise((r) => setTimeout(r, 2000))
+      return fetchWithRetry(url, options, retries - 1)
+    }
+
     if (response.status >= 500 && retries > 0) {
+      clearTimeout(timeoutId)
+      await new Promise((r) => setTimeout(r, 1000))
       return fetchWithRetry(url, options, retries - 1)
     }
 
@@ -58,7 +74,10 @@ async function fetchWithRetry(
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Request timed out. The server may be processing a large computation.")
     }
-    if (retries > 0 && error instanceof TypeError) {
+    // Network errors (TypeError: Failed to fetch) — retry with delay
+    if (retries > 0 && (error instanceof TypeError)) {
+      clearTimeout(timeoutId)
+      await new Promise((r) => setTimeout(r, 1000))
       return fetchWithRetry(url, options, retries - 1)
     }
     throw error
@@ -74,12 +93,17 @@ export const api = {
   },
 
   async validateTicker(ticker: string): Promise<{ ticker: string; valid: boolean }> {
-    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/validate/${ticker}`)
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/validate/${encodeURIComponent(ticker)}`)
     return res.json()
   },
 
-  async getPrice(ticker: string): Promise<{ ticker: string; price: number }> {
-    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/price/${ticker}`)
+  async getPrice(ticker: string): Promise<{ ticker: string; price: number; change?: number; changePct?: number; prevClose?: number }> {
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/price/${encodeURIComponent(ticker)}`)
+    return res.json()
+  },
+
+  async getSparkline(ticker: string, days = 30): Promise<{ ticker: string; days: number; prices: number[] }> {
+    const res = await fetchWithRetry(`${getBaseUrl()}/api/data/sparkline/${encodeURIComponent(ticker)}?days=${days}`)
     return res.json()
   },
 
@@ -89,7 +113,7 @@ export const api = {
     end: string
   ): Promise<{ ticker: string; rows: number; data: Array<Record<string, unknown>> }> {
     const res = await fetchWithRetry(
-      `${getBaseUrl()}/api/data/historical/${ticker}?start=${start}&end=${end}`
+      `${getBaseUrl()}/api/data/historical/${encodeURIComponent(ticker)}?start=${start}&end=${end}`
     )
     return res.json()
   },

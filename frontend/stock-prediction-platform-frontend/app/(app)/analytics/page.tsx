@@ -23,11 +23,11 @@ import { Button } from "@/components/ui/button"
 const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 const mockStrategyComparison = [
-  { ticker: "AAPL", strategy: "SMA Crossover", dateRange: "2024-01 to 2025-01", returnPct: 24.5, sharpe: 1.24, maxDD: -15.3, winRate: 58.3, alpha: 0.083, beta: 0.92 },
-  { ticker: "MSFT", strategy: "RSI", dateRange: "2024-01 to 2025-01", returnPct: 18.2, sharpe: 1.08, maxDD: -12.7, winRate: 55.6, alpha: 0.045, beta: 0.87 },
-  { ticker: "GOOGL", strategy: "MACD", dateRange: "2024-01 to 2025-01", returnPct: -3.2, sharpe: -0.15, maxDD: -22.4, winRate: 45.2, alpha: -0.065, beta: 1.12 },
-  { ticker: "TSLA", strategy: "SMA Crossover", dateRange: "2024-06 to 2025-06", returnPct: 32.1, sharpe: 1.56, maxDD: -18.9, winRate: 62.1, alpha: 0.142, beta: 1.45 },
-  { ticker: "NVDA", strategy: "RSI", dateRange: "2023-01 to 2025-01", returnPct: 45.3, sharpe: 1.82, maxDD: -20.1, winRate: 60.8, alpha: 0.195, beta: 1.32 },
+  { ticker: "RELIANCE.NS", strategy: "SMA Crossover", dateRange: "2024-01 to 2025-01", returnPct: 24.5, sharpe: 1.24, maxDD: -15.3, winRate: 58.3, alpha: 0.083, beta: 0.92 },
+  { ticker: "VOW3.DE", strategy: "RSI", dateRange: "2024-01 to 2025-01", returnPct: 18.2, sharpe: 1.08, maxDD: -12.7, winRate: 55.6, alpha: 0.045, beta: 0.87 },
+  { ticker: "BHP.AX", strategy: "MACD", dateRange: "2024-01 to 2025-01", returnPct: -3.2, sharpe: -0.15, maxDD: -22.4, winRate: 45.2, alpha: -0.065, beta: 1.12 },
+  { ticker: "0700.HK", strategy: "SMA Crossover", dateRange: "2024-06 to 2025-06", returnPct: 32.1, sharpe: 1.56, maxDD: -18.9, winRate: 62.1, alpha: 0.142, beta: 1.45 },
+  { ticker: "JSE40.JO", strategy: "RSI", dateRange: "2023-01 to 2025-01", returnPct: 45.3, sharpe: 1.82, maxDD: -20.1, winRate: 60.8, alpha: 0.195, beta: 1.32 },
 ]
 
 const riskMetrics = [

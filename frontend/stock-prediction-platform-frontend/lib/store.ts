@@ -67,7 +67,7 @@ export const useStore = create<AppState>((set, get) => ({
   recentActivity: [
     {
       id: "1",
-      ticker: "AAPL",
+      ticker: "RELIANCE.NS",
       type: "Backtest",
       strategy: "SMA Crossover",
       result: 12.5,
@@ -75,7 +75,7 @@ export const useStore = create<AppState>((set, get) => ({
     },
     {
       id: "2",
-      ticker: "MSFT",
+      ticker: "VOW3.DE",
       type: "Prediction",
       strategy: "ML Model",
       result: 0,
@@ -83,7 +83,7 @@ export const useStore = create<AppState>((set, get) => ({
     },
     {
       id: "3",
-      ticker: "GOOGL",
+      ticker: "BHP.AX",
       type: "Backtest",
       strategy: "RSI",
       result: -3.2,
@@ -91,7 +91,7 @@ export const useStore = create<AppState>((set, get) => ({
     },
     {
       id: "4",
-      ticker: "TSLA",
+      ticker: "0700.HK",
       type: "Backtest",
       strategy: "MACD",
       result: 8.7,
@@ -99,7 +99,7 @@ export const useStore = create<AppState>((set, get) => ({
     },
     {
       id: "5",
-      ticker: "NVDA",
+      ticker: "9984.T",
       type: "Prediction",
       strategy: "ML Model",
       result: 0,
