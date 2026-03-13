@@ -14,3 +14,4 @@ quantstats==0.0.62
 finnhub-python
 httpx==0.28.1
 slowapi==0.1.9
+plotly<6.0
