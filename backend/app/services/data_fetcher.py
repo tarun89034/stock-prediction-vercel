@@ -23,10 +23,24 @@ def _td_api_key() -> Optional[str]:
 
 
 def _td_quote(ticker: str) -> Optional[dict]:
-    """Fetch a quote from TwelveData. Returns raw JSON dict or None."""
+    """Fetch a quote from TwelveData. Returns raw JSON dict or None.
+    Uses rate limiter and cache (5 min TTL). Skips indices."""
+    if ticker.startswith("^") or ticker in ["000300.SS", "000001.SS", "399001.SZ"]:
+        return None
+
     api_key = _td_api_key()
     if not api_key:
         return None
+
+    cache_key = f"td:quote:{ticker}"
+    cached = _td_cache.get(cache_key)
+    if cached and (time.time() - cached["ts"]) < 300:  # 5 min TTL for quotes
+        return cached["data"]
+
+    if not _td_rate_limiter.acquire(timeout=5.0):
+        logger.warning(f"TwelveData quote rate limit exceeded for {ticker}")
+        return None
+
     try:
         # Strip yfinance-style suffixes — TwelveData uses its own exchange param
         # For US tickers (no suffix) this works directly.
@@ -41,7 +55,10 @@ def _td_quote(ticker: str) -> Optional[dict]:
         data = resp.json()
         if data.get("status") == "error" or "code" in data:
             logger.debug(f"TwelveData quote failed for {ticker}: {data.get('message', '')}")
+            _td_cache[cache_key] = {"data": None, "ts": time.time()}
             return None
+        
+        _td_cache[cache_key] = {"data": data, "ts": time.time()}
         return data
     except Exception as e:
         logger.debug(f"TwelveData quote exception for {ticker}: {e}")
@@ -362,9 +379,8 @@ class DataFetcher:
 
     @staticmethod
     def get_current_price(ticker: str) -> dict:
-        """Get the latest available price with change data using yfinance only.
-        TwelveData is NOT used here to conserve rate-limited API calls
-        for backtesting/prediction where they matter most.
+        """Get the latest available price with change data.
+        Tries yfinance first, falls back to TwelveData (cached & rate-limited).
         Returns dict with price, change, changePct, prevClose."""
         try:
             stock = yf.Ticker(ticker)
@@ -383,13 +399,30 @@ class DataFetcher:
         except Exception:
             pass
 
+        # 2. Fallback: TwelveData quote (cached & rate-limited)
+        logger.info(f"yfinance price failed for {ticker}, trying TwelveData fallback")
+        td = _td_quote(ticker)
+        if td and td.get("close"):
+            try:
+                price = float(td["close"])
+                prev_close = float(td.get("previous_close", price))
+                change = float(td.get("change", 0))
+                change_pct = float(td.get("percent_change", 0))
+                return {
+                    "price": price,
+                    "change": round(change, 2),
+                    "changePct": round(change_pct, 2),
+                    "prevClose": prev_close,
+                }
+            except (ValueError, TypeError) as e:
+                logger.warning(f"TwelveData price parse error for {ticker}: {e}")
+
         raise ValueError(f"Cannot get current price for {ticker}")
 
     @staticmethod
     def get_sparkline(ticker: str, days: int = 30) -> list[float]:
         """Return the last `days` daily closing prices for sparkline charts.
-        Uses yfinance only. TwelveData is NOT used here to conserve
-        rate-limited API calls for backtesting/prediction."""
+        Tries yfinance first, falls back to TwelveData (rate-limited & cached)."""
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period=f"{days + 15}d")
@@ -400,13 +433,33 @@ class DataFetcher:
         except Exception:
             pass
 
+        # 2. Fallback: TwelveData time series
+        if not _is_index(ticker):
+            logger.info(f"yfinance sparkline failed for {ticker}, trying TwelveData fallback")
+            td_cache_key = f"td:sparkline:{ticker}:{days}"
+            cached = _td_cache.get(td_cache_key)
+            if cached and (time.time() - cached["ts"]) < TD_CACHE_TTL:
+                values = cached["values"]
+            elif _td_rate_limiter.acquire(timeout=5.0):
+                values = _td_time_series(ticker, outputsize=days + 5, interval="1day")
+                _td_cache[td_cache_key] = {"values": values, "ts": time.time()}
+            else:
+                values = None
+
+            if values:
+                try:
+                    # TwelveData returns newest first, reverse for chronological order
+                    closes = [round(float(v["close"]), 2) for v in reversed(values)]
+                    return closes[-days:]
+                except (KeyError, ValueError, TypeError) as e:
+                    logger.warning(f"TwelveData sparkline parse error for {ticker}: {e}")
+
         return []
 
     @staticmethod
     def validate_ticker(ticker: str) -> bool:
-        """Check if a ticker symbol is valid using yfinance only.
-        TwelveData is NOT used here to conserve rate-limited API calls
-        for backtesting/prediction where they matter most."""
+        """Check if a ticker symbol is valid.
+        Tries yfinance first, falls back to TwelveData (cached & rate-limited)."""
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="5d")
@@ -414,5 +467,11 @@ class DataFetcher:
                 return True
         except Exception:
             pass
+
+        # 2. Fallback: TwelveData quote
+        logger.info(f"yfinance failed for {ticker}, trying TwelveData fallback")
+        td = _td_quote(ticker)
+        if td and td.get("close") and td.get("name"):
+            return True
 
         return False
