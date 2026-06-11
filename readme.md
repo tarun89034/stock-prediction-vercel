@@ -7,7 +7,9 @@ sdk: docker
 app_port: 7860
 pinned: false
 ---
+# 📈 Stock Prediction & Backtesting Platform
 
+> **[▶ Watch Live Demo](https://res.cloudinary.com/dgbobo43l/video/upload/v1776252567/stock-prediction_backtesting_jv4mcm.mp4)**  ·  **[🚀 Live App](https://huggingface.co/spaces/ty8890/stock-prediction-platform)**  ·  **[⭐ Star this repo](#)**
 # 📈 Stock Prediction & Backtesting Platform
 
 A production-ready quantitative finance platform that combines **strategy backtesting**, **ML-based price direction prediction**, and **explainable AI** — built entirely with free tools and APIs.
