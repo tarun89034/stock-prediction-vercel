@@ -11,6 +11,8 @@ import threading
 logger = logging.getLogger(__name__)
 
 # ─── TwelveData fallback helpers ───
+from app.config import settings as _settings
+
 _TWELVEDATA_BASE = "https://api.twelvedata.com"
 
 def _td_api_key() -> Optional[str]:
@@ -22,10 +24,21 @@ def _td_api_key() -> Optional[str]:
         return None
 
 
+# Index tickers that don't carry the yfinance "^" prefix (mainland China).
+_NON_CARET_INDICES = frozenset({"000300.SS", "000001.SS", "399001.SZ"})
+
+
+def _is_index(ticker: str) -> bool:
+    """True for market-index symbols. TwelveData's free tier doesn't cover
+    indices, so callers skip the fallback rather than spend a rate-limited
+    call on a request that can only fail."""
+    return ticker.startswith("^") or ticker in _NON_CARET_INDICES
+
+
 def _td_quote(ticker: str) -> Optional[dict]:
     """Fetch a quote from TwelveData. Returns raw JSON dict or None.
     Uses rate limiter and cache (5 min TTL). Skips indices."""
-    if ticker.startswith("^") or ticker in ["000300.SS", "000001.SS", "399001.SZ"]:
+    if _is_index(ticker):
         return None
 
     api_key = _td_api_key()
@@ -67,7 +80,11 @@ def _td_quote(ticker: str) -> Optional[dict]:
 
 def _td_time_series(ticker: str, outputsize: int = 30, interval: str = "1day",
                     start_date: str = "", end_date: str = "") -> Optional[list[dict]]:
-    """Fetch time series from TwelveData. Returns list of OHLCV dicts or None."""
+    """Fetch time series from TwelveData. Returns list of OHLCV dicts or None.
+    Skips indices."""
+    if _is_index(ticker):
+        return None
+
     api_key = _td_api_key()
     if not api_key:
         return None
@@ -138,7 +155,7 @@ TD_CACHE_TTL = 600  # 10 minutes — longer than yfinance cache since TD calls a
 
 # ─── In-memory cache for historical data ───
 _data_cache: dict[str, dict] = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = _settings.cache_ttl_seconds  # CACHE_TTL_SECONDS, default 5 minutes
 
 # ─── Global market benchmark mapping ───
 # Maps ticker suffix/exchange to the appropriate regional benchmark index
@@ -246,8 +263,12 @@ class DataFetcher:
         except Exception as e:
             logger.warning(f"yfinance fetch failed for {ticker}: {e}")
 
-        # 2. Fallback: TwelveData time series (rate-limited & cached)
-        if df.empty:
+        # 2. Fallback: TwelveData time series (rate-limited & cached).
+        # Checked before acquiring a limiter slot -- TwelveData has no index
+        # coverage, so an index request would spend call budget to fail.
+        if df.empty and _is_index(ticker):
+            logger.info(f"yfinance returned empty for index {ticker}, no TwelveData coverage")
+        elif df.empty:
             logger.info(f"yfinance returned empty for {ticker}, trying TwelveData fallback")
             # Map yfinance interval to TwelveData interval
             td_interval_map = {

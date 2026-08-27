@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     default_slippage_pct: float = 0.1   # 0.1% slippage
     default_commission_pct: float = 0.1  # 0.1% commission
     max_backtest_years: int = 10
-    cache_ttl_seconds: int = 3600  # 1 hour
+    cache_ttl_seconds: int = 300  # 5 minutes
 
     # Finnhub API
     finnhub_api_key: Optional[str] = None

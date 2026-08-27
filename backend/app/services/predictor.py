@@ -15,8 +15,9 @@ class StockPredictor:
     CRITICAL DESIGN DECISIONS:
     - We predict DIRECTION (up/down), not exact price. Predicting exact
       prices is a fool's errand and gives users false confidence.
-    - Walk-forward validation: train on data up to month N, test on month N+1,
-      slide forward. This prevents look-ahead bias.
+    - Walk-forward validation: split the history into equal chunks of trading
+      days, train on chunks 1..N and test on chunk N+1, then slide forward.
+      This prevents look-ahead bias.
     - Feature engineering uses ONLY lagged features (no future data leakage).
     """
 
@@ -82,8 +83,10 @@ class StockPredictor:
             predictions=predictions,
             signal=signal,
             shap_explanation=shap_explanation,
-            model_accuracy=round(float(wf_accuracy), 4),
-            walk_forward_score=round(float(wf_accuracy), 4),
+            # Both scores are percentages (0-100), not fractions -- the API
+            # contract and the UI's 53/56% thresholds are expressed that way.
+            model_accuracy=round(float(wf_accuracy) * 100, 2),
+            walk_forward_score=round(float(wf_accuracy) * 100, 2),
         )
 
     def _build_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -156,13 +159,18 @@ class StockPredictor:
         accuracies = []
         all_predictions = []
 
-        for i in range(1, n_splits + 1):
-            train_end = split_size * (i + 1)
-            test_start = train_end
-            test_end = min(test_start + split_size, len(df))
+        if split_size == 0:
+            logger.warning(
+                f"Only {len(df)} rows after feature building -- too few for "
+                f"{n_splits} walk-forward splits"
+            )
+            return 0.5, []
 
-            if test_end <= test_start:
-                break
+        for i in range(1, n_splits + 1):
+            # Fold i trains on the first i chunks and tests on chunk i + 1.
+            train_end = split_size * i
+            test_start = train_end
+            test_end = test_start + split_size
 
             X_train, y_train = X[:train_end], y[:train_end]
             X_test, y_test = X[test_start:test_end], y[test_start:test_end]

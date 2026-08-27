@@ -1,12 +1,28 @@
 import vectorbt as vbt
 import pandas as pd
 import numpy as np
+import math
 from datetime import date
+from typing import Optional
 from app.services.data_fetcher import DataFetcher
 from app.models.schemas import BacktestRequest, BacktestResult, ParameterSweepRequest
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _finite(value, ndigits: int = 2) -> Optional[float]:
+    """Round a metric for the response, or return None if it isn't finite.
+
+    vectorbt returns inf for ratios with a zero denominator -- profit_factor
+    when a backtest has no losing trades, for instance -- and neither inf nor
+    nan is JSON-serializable, so they must not reach the response model.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(f, ndigits) if math.isfinite(f) else None
 
 class BacktestEngine:
     """
@@ -60,19 +76,18 @@ class BacktestEngine:
             initial_capital=request.initial_capital,
             final_capital=round(float(equity.iloc[-1]), 2),
             total_return_pct=round(float(pf.total_return() * 100), 2),
-            sharpe_ratio=round(float(pf.sharpe_ratio()), 4)
-            if not np.isnan(pf.sharpe_ratio())
-            else None,
+            sharpe_ratio=_finite(pf.sharpe_ratio(), 4),
             max_drawdown_pct=round(float(pf.max_drawdown() * 100), 2),
             win_rate_pct=round(float(pf.trades.win_rate() * 100), 2)
             if pf.trades.count() > 0
             else 0.0,
             total_trades=int(pf.trades.count()),
-            profit_factor=round(float(pf.trades.profit_factor()), 2)
+            profit_factor=_finite(pf.trades.profit_factor(), 2)
             if pf.trades.count() > 0
             else None,
-            alpha=round(alpha, 4) if alpha else None,
-            beta=round(beta, 4) if beta else None,
+            # `is not None` matters: a genuine alpha/beta of 0.0 is falsy.
+            alpha=_finite(alpha, 4) if alpha is not None else None,
+            beta=_finite(beta, 4) if beta is not None else None,
             equity_curve=self._series_to_list(equity, "equity"),
             drawdown_curve=self._series_to_list(drawdown, "drawdown"),
             trades=self._format_trades(trades_df),
@@ -114,9 +129,7 @@ class BacktestEngine:
                         "fast_window": fast,
                         "slow_window": slow,
                         "total_return_pct": round(float(pf.total_return() * 100), 2),
-                        "sharpe_ratio": round(float(pf.sharpe_ratio()), 4)
-                        if not np.isnan(pf.sharpe_ratio())
-                        else None,
+                        "sharpe_ratio": _finite(pf.sharpe_ratio(), 4),
                         "max_drawdown_pct": round(float(pf.max_drawdown() * 100), 2),
                         "total_trades": int(pf.trades.count()),
                         "win_rate_pct": round(float(pf.trades.win_rate() * 100), 2)

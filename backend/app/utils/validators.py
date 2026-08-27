@@ -2,6 +2,7 @@
 import re
 from datetime import date, timedelta
 from fastapi import HTTPException
+from app.config import settings
 
 
 def validate_ticker_symbol(ticker: str) -> str:
@@ -15,8 +16,14 @@ def validate_ticker_symbol(ticker: str) -> str:
     return ticker
 
 
-def validate_date_range(start_date: date, end_date: date, max_years: int = 10) -> None:
-    """Validate that a date range is reasonable."""
+def validate_date_range(
+    start_date: date, end_date: date, max_years: int | None = None
+) -> None:
+    """Validate that a date range is reasonable.
+
+    `max_years` defaults to the MAX_BACKTEST_YEARS setting."""
+    if max_years is None:
+        max_years = settings.max_backtest_years
     if start_date >= end_date:
         raise HTTPException(
             status_code=400,

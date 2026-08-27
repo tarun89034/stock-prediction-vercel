@@ -10,7 +10,7 @@ pinned: false
 
 # 📈 Stock Prediction & Backtesting Platform
 
-A production-ready quantitative finance platform that combines **strategy backtesting**, **ML-based price direction prediction**, and **explainable AI** — built entirely with free tools and APIs.
+A quantitative finance platform that combines **strategy backtesting**, **ML-based price direction prediction**, and **explainable AI** — built entirely with free tools and APIs.
 
 > **⚠️ Disclaimer:** This platform is for **educational and research purposes only**. It is NOT financial advice. Past performance does NOT guarantee future results. All predictions are probabilistic estimates with significant uncertainty. Never invest money you cannot afford to lose based on any model's output.
 
@@ -38,12 +38,14 @@ A production-ready quantitative finance platform that combines **strategy backte
 - [How It Works (Technical Deep Dive)](#how-it-works)
   - [Backtesting Pipeline](#backtesting-pipeline)
   - [Feature Engineering](#feature-engineering)
+  - [Data Sources & Fallback](#data-sources--fallback)
   - [Walk-Forward Validation](#walk-forward-validation)
   - [SHAP Explainability](#shap-explainability)
 - [Known Limitations](#known-limitations)
 - [Phase 2 Roadmap](#phase-2-roadmap)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Author & Contributors](#author--contributors)
 - [License](#license)
 
 ---
@@ -81,8 +83,8 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 | **XGBoost Direction Prediction** | Predicts whether a stock will go UP or DOWN (not exact prices) using engineered technical features. |
 | **Walk-Forward Validation** | The model is validated using expanding-window walk-forward splits — the gold standard for time-series model evaluation. No look-ahead bias. |
 | **SHAP Explainability** | Every prediction comes with a breakdown of which features drove the decision and in which direction. No more black-box predictions. |
-| **Interactive Frontend** | Streamlit-based UI with Plotly charts — equity curves, drawdown plots, parameter heatmaps, and SHAP feature impact bars. |
-| **Dockerized Deployment** | One-command deployment with `docker compose up`. Backend + frontend + database, all containerized. |
+| **Interactive Frontend** | Next.js + React SPA (statically exported and served by the backend) — equity curves, drawdown plots, parameter heatmaps, and SHAP feature impact bars. |
+| **Dockerized Deployment** | A single multi-stage `Dockerfile` builds the frontend and serves it from the backend container — one image, one port. |
 
 ### Planned Features (Phase 2)
 
@@ -90,7 +92,6 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 |---|---|
 | Finnhub Real-Time Data | Live price streaming replacing yfinance for real-time use cases |
 | SEC Insider Trading Alerts | Form 4 filings showing CEO/insider buy/sell activity |
-| React Frontend | Production-grade SPA replacing Streamlit |
 | Redis Caching | Sub-second response times for repeated queries |
 | WebSocket Live Updates | Push-based price updates without page refresh |
 
@@ -100,7 +101,7 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     FRONTEND (Streamlit)                  │
+│                  FRONTEND (Next.js + React)               │
 │  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌─────────┐ │
 │  │ Backtest   │ │ Predict    │ │Dashboard │ │ Explain │ │
 │  │ Page       │ │ Page       │ │ Page     │ │ Page    │ │
@@ -120,7 +121,8 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 │  ┌──────────▼──┐ ┌───────▼────┐ ┌──────▼───────┐        │
 │  │ Backtest    │ │ Predictor  │ │ Data Fetcher │        │
 │  │ Engine      │ │ Service    │ │ Service      │        │
-│  │ (Vectorbt)  │ │ (XGBoost)  │ │ (yfinance)   │        │
+│  │ (Vectorbt)  │ │ (XGBoost)  │ │ (yfinance +  │        │
+│  │             │ │            │ │  TwelveData) │        │
 │  └─────────────┘ └──────┬─────┘ └──────────────┘        │
 │                         │                                │
 │                  ┌──────▼─────┐                          │
@@ -134,12 +136,11 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 └──────────────────────────────────────────────────────────┘
          │
          ▼
-┌──────────────────┐
-│  Yahoo Finance   │
-│  (Historical     │
-│   Data via       │
-│   yfinance)      │
-└──────────────────┘
+┌──────────────────┐   ┌──────────────────┐
+│  Yahoo Finance   │   │   TwelveData     │
+│  (primary, via   │──▶│   (fallback,     │
+│   yfinance)      │   │   rate-limited)  │
+└──────────────────┘   └──────────────────┘
 ```
 
 ---
@@ -154,9 +155,9 @@ Most "stock prediction" apps show a single price forecast with no context, no ri
 | **Explainability** | SHAP (TreeExplainer) | Exact Shapley values for tree-based models, fast and theoretically grounded |
 | **Performance Metrics** | quantstats | One-line calculation of Sharpe, Drawdown, Alpha, Beta, and 30+ other metrics |
 | **Data Source** | yfinance | Free historical OHLCV data (suitable for backtesting, NOT for live trading) |
-| **Frontend** | Streamlit + Plotly | Rapid prototyping, interactive charts, zero JavaScript required |
+| **Frontend** | Next.js + React + Recharts | Static export served directly by FastAPI, no separate frontend server in production |
 | **Database** | SQLite (MVP) / PostgreSQL (production) | Zero-config for development, easy migration path to production |
-| **Containerization** | Docker + Docker Compose | Reproducible builds, one-command deployment |
+| **Containerization** | Docker (multi-stage build) | Reproducible builds; frontend and backend ship as one image |
 | **Language** | Python 3.11+ | Ecosystem dominance in ML/finance, async support |
 
 ---
@@ -181,43 +182,58 @@ stock-prediction-platform/
 │   │   │   ├── backtester.py        # Vectorbt backtesting engine
 │   │   │   ├── predictor.py         # XGBoost prediction + walk-forward validation
 │   │   │   ├── explainer.py         # SHAP-based model explanations
-│   │   │   └── metrics.py           # quantstats performance calculations
+│   │   │   ├── metrics.py           # quantstats performance calculations
+│   │   │   ├── currency.py          # FX rates & currency conversion
+│   │   │   └── realtime_feed.py     # Finnhub live feed (optional, Phase 2)
 │   │   │
 │   │   ├── api/
 │   │   │   ├── routes_data.py       # Market data endpoints
 │   │   │   ├── routes_backtest.py   # Backtesting endpoints
 │   │   │   ├── routes_predict.py    # Prediction endpoints
-│   │   │   └── routes_metrics.py    # Metrics endpoints
+│   │   │   ├── routes_metrics.py    # Metrics endpoints
+│   │   │   └── routes_websocket.py  # Live price stream (loaded only with FINNHUB_API_KEY)
 │   │   │
 │   │   └── utils/
 │   │       ├── cache.py             # In-memory / Redis caching (Phase 2)
-│   │       └── validators.py        # Input validation helpers
+│   │       └── validators.py        # Date-range & parameter-sweep validation
 │   │
+│   ├── static/                      # Built frontend, served by FastAPI
 │   ├── requirements.txt
-│   └── Dockerfile
+│   └── docker.dockerfile
 │
 ├── frontend/
-│   ├── app.py                       # Streamlit main page
-│   ├── pages/
-│   │   ├── 1_backtest.py            # Backtesting UI
-│   │   ├── 2_predict.py             # Prediction UI
-│   │   ├── 3_dashboard.py           # Performance metrics dashboard
-│   │   └── 4_explain.py             # SHAP explanations UI
-│   ├── requirements.txt
-│   └── Dockerfile
+│   └── stock-prediction-platform-frontend/
+│       ├── app/
+│       │   ├── layout.tsx           # Root layout
+│       │   └── (app)/
+│       │       ├── page.tsx         # Dashboard
+│       │       ├── backtest/        # Backtesting UI
+│       │       ├── predict/         # Prediction UI
+│       │       ├── analytics/       # Performance metrics
+│       │       ├── explain/         # SHAP explanations UI
+│       │       └── settings/
+│       ├── components/
+│       │   ├── backtest/            # Config panel, results, sweep sheet
+│       │   ├── predict/             # Config panel, results
+│       │   ├── dashboard/           # Market overview, quick actions
+│       │   └── ui/                  # shadcn/ui primitives
+│       ├── lib/
+│       │   ├── api.ts               # Backend API client
+│       │   ├── types.ts             # Shared response types
+│       │   ├── format.ts            # Locale-aware number/currency formatting
+│       │   └── store.ts             # Client-side state
+│       ├── next.config.mjs          # Static export config
+│       └── package.json
 │
-├── tests/
-│   ├── test_data_fetcher.py
-│   ├── test_backtester.py
-│   ├── test_predictor.py
-│   └── test_explainer.py
-│
-├── docker-compose.yml
+├── Dockerfile                       # Multi-stage: builds frontend + backend
+├── docker-compose.yml               # Backend-only, for local API development
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
 └── README.md
 ```
+
+> **Note:** There is no automated test suite yet. See [Contributing](#contributing).
 
 ---
 
@@ -225,7 +241,8 @@ stock-prediction-platform/
 
 - **Python 3.11+** (3.11 recommended; 3.12+ may have compatibility issues with some ML libraries)
 - **pip** (Python package manager)
-- **Docker & Docker Compose** (optional, for containerized deployment)
+- **Node.js 18+** and **npm** (to build the frontend)
+- **Docker** (optional, for containerized deployment)
 - **Git**
 - **~2 GB disk space** (for Python ML dependencies)
 - **4 GB+ RAM** (XGBoost + Vectorbt can be memory-intensive on large datasets)
@@ -264,13 +281,9 @@ pip install -r requirements.txt
 **3. Set up the frontend:**
 
 ```bash
-cd ../frontend
+cd ../frontend/stock-prediction-platform-frontend
 
-# Create separate virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-
-pip install -r requirements.txt
+npm install --legacy-peer-deps
 ```
 
 **4. Configure environment variables:**
@@ -302,38 +315,38 @@ API docs at: [http://localhost:8000/docs](http://localhost:8000/docs) (auto-gene
 **6. Start the frontend (in a new terminal):**
 
 ```bash
-cd frontend
-source venv/bin/activate
-streamlit run app.py --server.port 8501
+cd frontend/stock-prediction-platform-frontend
+npm run dev
 ```
 
-Open [http://localhost:8501](http://localhost:8501) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+To produce the static bundle the backend serves in production:
+
+```bash
+npm run build   # writes ./out
+```
 
 ### Docker Setup
 
-**One command to run everything:**
+The root `Dockerfile` is multi-stage: it builds the Next.js static export, then
+copies it into the Python image so a single container serves both the API and
+the UI. This is the image deployed to HuggingFace Spaces.
 
 ```bash
-docker compose up --build
+docker build -t stock-platform .
+docker run -p 7860:7860 --env-file .env stock-platform
 ```
 
 | Service | URL |
 |---|---|
-| Frontend (Streamlit) | [http://localhost:8501](http://localhost:8501) |
-| Backend API | [http://localhost:8000](http://localhost:8000) |
-| API Docs (Swagger) | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| Frontend | [http://localhost:7860](http://localhost:7860) |
+| Backend API | [http://localhost:7860/api](http://localhost:7860/api) |
+| API Docs (Swagger) | [http://localhost:7860/docs](http://localhost:7860/docs) |
 
-**To stop:**
-
-```bash
-docker compose down
-```
-
-**To rebuild after code changes:**
-
-```bash
-docker compose up --build
-```
+Configuration is read from the environment — the image does **not** bake in a
+`.env` file, so pass secrets with `--env-file` or `-e` at run time (on
+HuggingFace Spaces, use the Space's secrets).
 
 ---
 
@@ -353,7 +366,10 @@ DEFAULT_COMMISSION_PCT=0.1
 MAX_BACKTEST_YEARS=10
 
 # Cache
-CACHE_TTL_SECONDS=3600
+CACHE_TTL_SECONDS=300
+
+# Fallback data source (optional but recommended for cloud deployments)
+TWELVEDATA_API_KEY=your_twelvedata_api_key_here
 
 # Phase 2 (not needed for MVP)
 # FINNHUB_API_KEY=your_key_here
@@ -363,10 +379,16 @@ CACHE_TTL_SECONDS=3600
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./stock_platform.db` | Database connection string. SQLite for dev, PostgreSQL for production. |
-| `DEFAULT_SLIPPAGE_PCT` | `0.1` | Default slippage percentage per trade (0.1 = 0.1%). |
-| `DEFAULT_COMMISSION_PCT` | `0.1` | Default commission percentage per trade. |
-| `MAX_BACKTEST_YEARS` | `10` | Maximum years of historical data allowed in a single backtest. |
-| `CACHE_TTL_SECONDS` | `3600` | How long to cache API responses (in seconds). |
+| `DEFAULT_SLIPPAGE_PCT` | `0.1` | Slippage percentage per trade (`0.1` = 0.1%) used when a request omits `slippage_pct`. Applies to both backtests and sweeps. |
+| `DEFAULT_COMMISSION_PCT` | `0.1` | Commission percentage per trade used when a request omits `commission_pct`. |
+| `MAX_BACKTEST_YEARS` | `10` | Maximum span of a single backtest or sweep. Longer ranges are rejected with `400 Date range exceeds maximum of N years.` |
+| `CACHE_TTL_SECONDS` | `300` | How long fetched historical data stays in the in-memory cache. The TwelveData caches have their own fixed TTLs — see [Data Sources & Fallback](#data-sources--fallback). |
+| `TWELVEDATA_API_KEY` | _(unset)_ | Enables the TwelveData fallback when yfinance fails — see [Data Sources & Fallback](#data-sources--fallback). Without it the app still works, but a yfinance outage becomes a hard failure. |
+| `FINNHUB_API_KEY` | _(unset)_ | Enables the optional WebSocket live-price router. If unset, that router is skipped at startup and the rest of the app runs normally. |
+
+> **Note:** `DEFAULT_SLIPPAGE_PCT` and `DEFAULT_COMMISSION_PCT` are read at
+> import time to build the Pydantic field defaults, so changing them requires a
+> restart, not just a new request.
 
 ---
 
@@ -470,7 +492,10 @@ The predictor uses XGBoost to forecast whether a stock will go **UP or DOWN** ov
 **Output includes:**
 
 - **Signal**: BUY / SELL / HOLD (based on average predicted probability)
-- **Walk-Forward Accuracy**: How well the model performed on unseen data
+- **Walk-Forward Accuracy**: How well the model performed on unseen data.
+  `model_accuracy` and `walk_forward_score` are **percentages (0–100)**, not
+  fractions — `54.8` means 54.8%. The UI's warning thresholds (53 / 56) read
+  the same scale.
 - **Per-day predictions**: Direction probability with decaying confidence
 - **SHAP explanation**: Which features drove the prediction (see below)
 
@@ -522,6 +547,14 @@ Every backtest automatically calculates:
 | **Beta** | Strategy volatility relative to market | Beta = 1.0 means you move with the market. Beta > 1.0 = more volatile. Beta < 1.0 = less volatile. |
 | **Total Return** | (Final Capital - Initial Capital) / Initial Capital (%) | Simple percentage gain/loss. |
 
+**Undefined metrics return `null`, not a number.** A ratio with a zero
+denominator has no meaningful value — profit factor when a backtest had no
+losing trades, Sharpe when returns have zero variance, alpha/beta when fewer
+than 30 overlapping days exist with the benchmark. These serialize as `null`
+and the UI shows **N/A**. Treat `null` as "not computable from this sample",
+not as zero.
+
+
 ---
 
 ## API Reference
@@ -536,13 +569,26 @@ Once the backend is running, full interactive API docs are available at:
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
-| `GET` | `/api/data/price/{ticker}` | Get current price for a ticker |
+| `GET` | `/api/data/price/{ticker}` | Current price with change and previous close |
 | `GET` | `/api/data/validate/{ticker}` | Check if a ticker symbol is valid |
-| `GET` | `/api/data/historical/{ticker}?start=YYYY-MM-DD&end=YYYY-MM-DD` | Get historical OHLCV data |
+| `GET` | `/api/data/historical/{ticker}?start=YYYY-MM-DD&end=YYYY-MM-DD` | Historical OHLCV data |
+| `GET` | `/api/data/sparkline/{ticker}?days=30` | Last N daily closes for sparkline charts (`days` 5–90) |
+| `GET` | `/api/data/currencies` | Supported currencies with symbols and names |
+| `GET` | `/api/data/exchange-rate/{from}/{to}` | Exchange rate between two currencies |
+| `GET` | `/api/data/exchange-rates?base=USD` | Rates from a base currency to all supported currencies |
+| `GET` | `/api/data/convert` | Convert an amount between currencies |
 | `POST` | `/api/backtest/run` | Run a single backtest |
 | `POST` | `/api/backtest/sweep` | Run parameter optimization sweep |
 | `POST` | `/api/predict/run` | Generate price direction prediction |
 | `GET` | `/api/metrics/health` | List available metrics |
+
+Ticker paths accept the `:path` form, so international and index symbols with
+dots or a leading caret (`RELIANCE.NS`, `TSCO.L`, `^GSPC`) work unescaped.
+
+Both backtest endpoints reject bad input with `400` before doing any work: a
+start date on or after the end date, an end date in the future, a span longer
+than `MAX_BACKTEST_YEARS`, and (for sweeps) more than 100 parameter
+combinations.
 
 ---
 
@@ -604,6 +650,48 @@ The XGBoost model uses **10 engineered features**, all derived from OHLCV data. 
 
 **Target variable:** Binary — did the stock go UP (1) or DOWN (0) the next day?
 
+### Data Sources & Fallback
+
+Market data is fetched through a two-tier chain, because yfinance is an
+unofficial scraper with no uptime guarantee — and cloud hosts in particular
+get their IPs blocked by Yahoo.
+
+```
+Request ──▶ in-memory cache (5 min) ──hit──▶ return
+                  │ miss
+                  ▼
+            yfinance ──success──▶ cache + return
+                  │ empty / raised
+                  ▼
+       is the ticker an index?  ──yes──▶ give up, raise ValueError
+                  │ no
+                  ▼
+       TwelveData cache (10 min) ──hit──▶ return
+                  │ miss
+                  ▼
+       rate limiter (7 calls/min) ──denied──▶ give up
+                  │ granted
+                  ▼
+            TwelveData API ──▶ cache + return
+```
+
+**Why indices skip the fallback.** TwelveData's free tier has no index
+coverage, so a request for `^GSPC`, `^NSEI`, or the mainland-China index
+symbols can only fail. Spending one of seven calls per minute to learn that
+would starve the tickers the fallback can actually serve, so `_is_index()`
+short-circuits ahead of the rate limiter.
+
+**Budget notes:**
+
+| Guard | Value | Why |
+|---|---|---|
+| Rate limiter | 7 calls/min | TwelveData's free tier allows 8; one is held back as headroom |
+| TwelveData cache TTL | 10 min (time series / sparklines), 5 min (quotes) | Longer than the yfinance cache — these calls are scarce |
+| Historical-data cache TTL | 5 min | Cheap to refetch from yfinance, so kept fresher |
+
+Failed TwelveData responses are cached too, so a bad ticker doesn't re-spend
+the budget on every retry.
+
 ### Walk-Forward Validation
 
 Standard train/test splits don't work for time-series data because they allow **information leakage from the future**. Walk-forward validation solves this:
@@ -658,13 +746,14 @@ These are not bugs — they are inherent constraints you should understand:
 
 | Limitation | Impact | Mitigation |
 |---|---|---|
-| **yfinance is unofficial** | May break if Yahoo changes their website. Not suitable for production data feeds. | Phase 2 adds Finnhub as a proper API source. |
+| **yfinance is unofficial** | May break if Yahoo changes their website. Not suitable for production data feeds. | TwelveData is wired in as an automatic fallback; Phase 2 adds Finnhub as a proper API source. |
 | **Prediction accuracy is modest** | 53-56% directional accuracy is typical. This is an **extremely difficult** problem. | Walk-forward validation gives honest accuracy estimates. UI warns when accuracy is too low. |
 | **SHAP values are approximate** | Correlated features (RSI, MACD, MAs) make SHAP attributions unstable. | Displayed with caveats. Not presented as ground truth. |
 | **No live trading integration** | This is a research/analysis tool, not a trading bot. | By design. Connecting to a broker adds massive liability and complexity. |
 | **Single-asset backtesting only** | Cannot test portfolio-level strategies (e.g., pairs trading, sector rotation). | Phase 3 consideration. |
 | **Vectorbt API instability** | Vectorbt's API changes between versions. Some method calls may need adjustment. | Pin version in requirements.txt. Test interactively after install. |
 | **Free data limitations** | yfinance has no guaranteed uptime or rate limits. Historical data only. | Acceptable for MVP. Finnhub in Phase 2 for real-time. |
+| **Fallback doesn't cover indices** | If yfinance is blocked, index tickers (`^GSPC`, `^NSEI`, …) fail outright — TwelveData's free tier has no index data. | Individual tickers still resolve via the fallback. See [Data Sources & Fallback](#data-sources--fallback). |
 | **No user authentication** | Anyone with the URL can access the platform. | Phase 2 adds auth. For now, don't deploy publicly with sensitive data. |
 
 ---
@@ -710,7 +799,12 @@ pip install vectorbt       # Then vectorbt
 ### "No data returned for TICKER"
 
 - Check if the ticker symbol is valid (e.g., `AAPL` not `Apple`)
-- yfinance may be temporarily down — wait and retry
+- yfinance may be temporarily down, or blocking your host's IP — set
+  `TWELVEDATA_API_KEY` so the fallback can take over
+- **Index tickers** (`^GSPC`, `^NSEI`, …) have no fallback: if yfinance can't
+  serve them, the request fails. Individual tickers still work.
+- The fallback is capped at 7 calls/min. Under heavy use you'll see
+  `TwelveData rate limit exceeded` in the logs — wait a minute and retry.
 - Some tickers (OTC, international) have limited data availability
 
 ### SHAP computation is slow
@@ -723,18 +817,24 @@ pip install vectorbt       # Then vectorbt
 
 ```bash
 # Clear Docker cache and rebuild
-docker compose down
 docker system prune -f
-docker compose up --build
+docker build --no-cache -t stock-platform .
+```
+
+If the failure is in the frontend stage, reproduce it directly:
+
+```bash
+cd frontend/stock-prediction-platform-frontend
+npm ci --legacy-peer-deps && npm run build
 ```
 
 ### Port already in use
 
 ```bash
-# Find and kill the process using port 8000 or 8501
+# Find and kill the process using port 8000 or 3000
 # On macOS/Linux:
 lsof -ti:8000 | xargs kill -9
-lsof -ti:8501 | xargs kill -9
+lsof -ti:3000 | xargs kill -9
 ```
 
 ---
@@ -752,7 +852,13 @@ lsof -ti:8501 | xargs kill -9
 - Python: Follow PEP 8, use type hints, write docstrings
 - Every service method should handle exceptions gracefully
 - No hardcoded credentials or API keys — use environment variables
-- New features must include at least basic tests
+- There is no test suite yet; if you add one, `pytest` under `backend/tests/` is the intended home
+
+---
+
+## Author & Contributors
+
+- **tarun89034** ([@tarun89034](https://github.com/tarun89034))
 
 ---
 
@@ -769,7 +875,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - [SHAP](https://github.com/shap/shap) — Model explainability
 - [yfinance](https://github.com/ranaroussi/yfinance) — Yahoo Finance data
 - [FastAPI](https://github.com/tiangolo/fastapi) — Modern Python web framework
-- [Streamlit](https://github.com/streamlit/streamlit) — Data app framework
+- [Next.js](https://github.com/vercel/next.js) — React framework for the frontend
 - [quantstats](https://github.com/ranaroussi/quantstats) — Portfolio analytics
 
 ---

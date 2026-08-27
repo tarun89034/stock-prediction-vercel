@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from datetime import date
 from typing import Optional
+from app.config import settings
 
 class BacktestRequest(BaseModel):
     ticker: str = Field(..., json_schema_extra={"example": "RELIANCE.NS"})
@@ -15,8 +16,8 @@ class BacktestRequest(BaseModel):
     rsi_oversold: float = Field(default=30.0, ge=5, le=50)
     # Cost parameters
     initial_capital: float = Field(default=10000.0, ge=100)
-    slippage_pct: float = Field(default=0.1, ge=0, le=2.0)
-    commission_pct: float = Field(default=0.1, ge=0, le=2.0)
+    slippage_pct: float = Field(default=settings.default_slippage_pct, ge=0, le=2.0)
+    commission_pct: float = Field(default=settings.default_commission_pct, ge=0, le=2.0)
 
 class BacktestResult(BaseModel):
     ticker: str
@@ -46,8 +47,8 @@ class PredictionResult(BaseModel):
     predictions: list[dict]  # [{date, predicted_price, confidence}]
     signal: str  # "BUY", "SELL", "HOLD"
     shap_explanation: list[dict]  # [{feature, value, impact}]
-    model_accuracy: float
-    walk_forward_score: float
+    model_accuracy: float  # percentage, 0-100
+    walk_forward_score: float  # percentage, 0-100
 
 class ParameterSweepRequest(BaseModel):
     ticker: str
@@ -58,5 +59,5 @@ class ParameterSweepRequest(BaseModel):
     fast_window_range: list[int] = Field(default=[10, 20, 30, 50])
     slow_window_range: list[int] = Field(default=[50, 100, 150, 200])
     initial_capital: float = Field(default=10000.0)
-    slippage_pct: float = Field(default=0.1)
-    commission_pct: float = Field(default=0.1)
+    slippage_pct: float = Field(default=settings.default_slippage_pct)
+    commission_pct: float = Field(default=settings.default_commission_pct)

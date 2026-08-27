@@ -37,6 +37,7 @@ out/
 # Next.js
 frontend/stock-prediction-platform-frontend/.next/
 frontend/stock-prediction-platform-frontend/node_modules/
+*.tsbuildinfo
 
 # OS
 .DS_Store
